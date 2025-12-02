@@ -1,7 +1,7 @@
 {
-  "name": "countdown-statusbar",
+  "name": "near",
   "version": "1.0.0",
-  "description": "Mac status bar countdown app",
+  "description": "越近越重要，越近越靠前",
   "main": "src/main.cjs",
   "scripts": {
     "dev": "vite",
@@ -19,8 +19,8 @@
     "vite": "^5.0.0"
   },
   "build": {
-    "appId": "com.countdown.statusbar",
-    "productName": "Countdown",
+    "appId": "com.saplinghub.near",
+    "productName": "Near",
     "files": ["dist/**/*", "src/main.js", "src/preload.js"],
     "mac": {
       "target": ["dmg", "zip"],
