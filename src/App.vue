@@ -4,21 +4,29 @@
     <div class="main-panel">
       <!-- 头部 -->
       <header class="header">
-        <div class="app-title">Aura 倒计时</div>
-        <div class="tab-switch">
-          <button 
-            class="tab-btn" 
-            :class="{ active: currentTab === 'upcoming' }"
-            @click="currentTab = 'upcoming'"
-          >
-            进行中
-          </button>
-          <button 
-            class="tab-btn" 
-            :class="{ active: currentTab === 'completed' }"
-            @click="currentTab = 'completed'"
-          >
-            已结束
+        <div class="app-title">Near 倒计时</div>
+        <div class="header-actions">
+          <div class="tab-switch">
+            <button
+              class="tab-btn"
+              :class="{ active: currentTab === 'upcoming' }"
+              @click="currentTab = 'upcoming'"
+            >
+              进行中
+            </button>
+            <button
+              class="tab-btn"
+              :class="{ active: currentTab === 'completed' }"
+              @click="currentTab = 'completed'"
+            >
+              已结束
+            </button>
+          </div>
+          <button class="settings-btn" @click="showSettings = true" title="设置">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M12 1v6m0 6v6m-9-9h6m6 0h6m-2.636-6.364l-4.243 4.243m0 4.242l4.243 4.243M6.343 6.343l4.243 4.243m0 4.242l-4.243 4.243"></path>
+            </svg>
           </button>
         </div>
       </header>
@@ -90,6 +98,48 @@
       </button>
     </div>
 
+    <!-- 设置页面 -->
+    <div v-if="showSettings" class="settings-page">
+      <div class="settings-page-header">
+        <button class="settings-close-btn" @click="showSettings = false">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+        <h2>设置</h2>
+        <button class="settings-save-btn" @click="saveAIConfigData">保存</button>
+      </div>
+
+      <div class="settings-tabs">
+        <button
+          class="settings-tab-btn"
+          :class="{ active: settingsTab === 'ai' }"
+          @click="settingsTab = 'ai'"
+        >
+          ✨ AI 配置
+        </button>
+      </div>
+
+      <div class="settings-body" v-if="settingsTab === 'ai'">
+        <div class="form-group">
+          <label>API URL</label>
+          <input v-model="aiConfig.baseURL" placeholder="https://your-api.com" />
+        </div>
+        <div class="form-group">
+          <label>API Key</label>
+          <input v-model="aiConfig.apiKey" type="password" placeholder="sk-..." />
+        </div>
+        <div class="form-group">
+          <label>模型</label>
+          <input v-model="aiConfig.model" placeholder="gpt-4" />
+        </div>
+        <button class="btn-test-full" @click="testAIConfig" :disabled="aiLoading">
+          {{ aiLoading ? '测试中...' : '🧪 测试连接' }}
+        </button>
+      </div>
+    </div>
+
     <!-- 添加/编辑 模态框 -->
     <div v-if="showForm" class="modal-overlay" @click.self="cancelEdit">
       <div class="modal-card">
@@ -100,10 +150,20 @@
         
         <div class="form-body">
           <div class="form-group">
+            <label>AI 智能解析</label>
+            <div class="ai-input-group">
+              <input v-model="aiInput" placeholder="例如：过年倒计时 / 今年的进度" @keyup.enter="parseWithAI" />
+              <button class="ai-btn" @click="parseWithAI" :disabled="aiLoading">
+                {{ aiLoading ? '解析中...' : '✨ AI' }}
+              </button>
+            </div>
+          </div>
+
+          <div class="form-group">
             <label>事件名称</label>
             <input v-model="form.name" placeholder="例如：项目上线" autofocus />
           </div>
-          
+
           <div class="form-group">
             <label>开始时间</label>
             <input v-model="form.startDate" type="datetime-local" class="date-input" />
@@ -113,12 +173,12 @@
             <label>目标时间</label>
             <input v-model="form.date" type="datetime-local" class="date-input" />
           </div>
-          
+
           <div class="form-group">
             <label>选择图标</label>
             <div class="icon-selector">
-              <div 
-                v-for="type in ['rocket', 'palm', 'headphone', 'code', 'gift']" 
+              <div
+                v-for="type in ['rocket', 'palm', 'headphone', 'code', 'gift']"
                 :key="type"
                 class="icon-option"
                 :class="{ selected: form.iconType === type }"
@@ -142,11 +202,17 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { AIService } from './ai-service.js';
 
 const countdowns = ref([]);
 const currentTab = ref('upcoming');
 const showForm = ref(false);
+const showSettings = ref(false);
+const settingsTab = ref('ai');
 const form = ref({ name: '', date: '', startDate: '', iconType: 'rocket' });
+const aiInput = ref('');
+const aiConfig = ref({ baseURL: '', apiKey: '', model: '' });
+const aiLoading = ref(false);
 const editingId = ref(null);
 let timer = null;
 
@@ -289,8 +355,74 @@ const pinCountdown = async (id) => {
   await loadCountdowns();
 };
 
+const loadAIConfig = async () => {
+  const config = await window.electronAPI.getAIConfig();
+  if (config) {
+    aiConfig.value = config;
+  }
+};
+
+const saveAIConfigData = async () => {
+  try {
+    const config = {
+      baseURL: aiConfig.value.baseURL,
+      apiKey: aiConfig.value.apiKey,
+      model: aiConfig.value.model
+    };
+    await window.electronAPI.saveAIConfig(config);
+    alert('✅ 配置保存成功');
+    showSettings.value = false;
+  } catch (error) {
+    alert('❌ 保存失败: ' + error.message);
+  }
+};
+
+const testAIConfig = async () => {
+  if (!aiConfig.value.baseURL || !aiConfig.value.apiKey || !aiConfig.value.model) {
+    alert('⚠️ 请先填写完整配置');
+    return;
+  }
+
+  aiLoading.value = true;
+  try {
+    const service = new AIService(aiConfig.value);
+    await service.parseCountdown('测试连接');
+    alert('✅ 连接成功！AI 配置正常');
+  } catch (error) {
+    alert('❌ 连接失败: ' + error.message);
+  } finally {
+    aiLoading.value = false;
+  }
+};
+
+const parseWithAI = async () => {
+  if (!aiInput.value.trim()) return;
+  if (!aiConfig.value.baseURL || !aiConfig.value.apiKey || !aiConfig.value.model) {
+    alert('请先配置 AI 设置');
+    showSettings.value = true;
+    return;
+  }
+
+  aiLoading.value = true;
+  try {
+    const service = new AIService(aiConfig.value);
+    const result = await service.parseCountdown(aiInput.value);
+    form.value.name = result.name;
+    form.value.date = result.date;
+    if (result.startDate) {
+      form.value.startDate = result.startDate;
+    }
+    aiInput.value = '';
+  } catch (error) {
+    alert('AI 解析失败: ' + error.message);
+  } finally {
+    aiLoading.value = false;
+  }
+};
+
 onMounted(() => {
   loadCountdowns();
+  loadAIConfig();
   timer = setInterval(() => {
     countdowns.value = [...countdowns.value];
   }, 60000);
@@ -366,6 +498,31 @@ html, body {
   letter-spacing: -0.5px;
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.settings-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: none;
+  background: rgba(0,0,0,0.04);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.settings-btn:hover {
+  background: rgba(0,0,0,0.08);
+  color: var(--text-primary);
+}
+
 .tab-switch {
   background: rgba(0,0,0,0.04);
   padding: 4px;
@@ -395,11 +552,12 @@ html, body {
 .list-container {
   flex: 1;
   overflow-y: auto;
-  padding: 20px;
+  padding: 12px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  background: transparent; 
+  gap: 10px;
+  background: transparent;
+  padding-bottom: 80px;
 }
 
 .list-container::-webkit-scrollbar {
@@ -408,15 +566,14 @@ html, body {
 
 .list-item {
   background: var(--card-bg);
-  border-radius: 16px;
-  /* 关键修改：右侧 padding 增加到 50px，为按钮留出空间 */
-  padding: 16px 50px 16px 16px;
+  border-radius: 12px;
+  padding: 10px 40px 10px 12px;
   display: flex;
-  align-items: flex-start; /* 顶部对齐，防止高度变化影响布局 */
-  gap: 16px;
+  align-items: center;
+  gap: 12px;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.02), 0 2px 4px -1px rgba(0, 0, 0, 0.02);
+  box-shadow: 0 2px 4px -1px rgba(0, 0, 0, 0.02);
   border: 1px solid rgba(255,255,255,0.5);
   cursor: pointer;
 }
@@ -427,14 +584,14 @@ html, body {
 }
 
 .item-icon {
-  width: 42px; /* 稍微缩小图标 */
-  height: 42px;
-  border-radius: 12px;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  font-size: 20px;
+  font-size: 18px;
   transition: all 0.3s;
 }
 
@@ -448,14 +605,14 @@ html, body {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  min-width: 0; /* 防止 Flex 子项溢出 */
+  gap: 4px;
+  min-width: 0;
 }
 
-.item-header-row {
+.item-header {
   display: flex;
-  justify-content: space-between;
-  align-items: baseline;
+  align-items: center;
+  gap: 8px;
   margin-bottom: 2px;
 }
 
@@ -466,31 +623,24 @@ html, body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  /* 移除 max-width，让它自适应 */
+  flex: 1;
 }
 
-.item-date-small {
-  font-size: 11px;
-  color: var(--text-secondary);
-  font-weight: 500;
-  margin-left: 8px;
-  flex-shrink: 0;
-}
-
-.item-details {
+.item-info {
   display: flex;
+  justify-content: space-between;
   align-items: baseline;
   gap: 8px;
 }
 
-.timer-group {
+.timer-compact {
   display: flex;
   align-items: baseline;
-  gap: 4px;
+  gap: 3px;
 }
 
 .days-num {
-  font-size: 22px;
+  font-size: 18px;
   font-weight: 800;
   color: var(--text-primary);
   line-height: 1;
@@ -498,29 +648,35 @@ html, body {
 }
 
 .days-label {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
   color: var(--text-secondary);
-  margin-right: 4px;
+  margin-right: 3px;
 }
 
 .time-detail {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
   opacity: 0.8;
 }
 
-.progress-container {
+.item-date {
+  font-size: 10px;
+  color: var(--text-secondary);
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.progress-compact {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-top: 4px;
+  gap: 6px;
 }
 
 .progress-bar {
   flex: 1;
-  height: 5px;
+  height: 4px;
   background: #F1F5F9;
   border-radius: 10px;
   overflow: hidden;
@@ -533,17 +689,27 @@ html, body {
 }
 
 .progress-text {
-  font-size: 11px;
+  font-size: 9px;
   font-weight: 600;
   color: #6366F1;
-  width: 32px;
+  min-width: 26px;
   text-align: right;
 }
 
-/* 按钮样式优化 - 绝对定位 */
+.item-actions {
+  position: absolute;
+  right: 8px;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 8px 0;
+}
+
 .action-btn {
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
   border-radius: 6px;
   border: none;
   background: transparent;
@@ -553,16 +719,6 @@ html, body {
   align-items: center;
   justify-content: center;
   transition: all 0.2s;
-  position: absolute;
-  right: 12px; /* 距离右边框 12px，不紧贴 */
-}
-
-.action-btn.delete {
-  top: 12px; /* 右上角 */
-}
-
-.action-btn.pin {
-  bottom: 12px; /* 右下角 */
 }
 
 .action-btn:hover {
@@ -798,5 +954,174 @@ html, body {
 @keyframes popIn {
   from { transform: scale(0.9) translateY(10px); opacity: 0; }
   to { transform: scale(1) translateY(0); opacity: 1; }
+}
+
+.ai-input-group {
+  display: flex;
+  gap: 6px;
+}
+
+.ai-input-group input {
+  flex: 1;
+}
+
+.ai-btn, .config-btn {
+  padding: 12px 16px;
+  background: var(--primary-gradient);
+  color: white;
+  border: none;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.config-btn {
+  padding: 12px;
+  background: #F1F5F9;
+  font-size: 16px;
+}
+
+.ai-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.ai-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px var(--primary-shadow);
+}
+
+.config-btn:hover {
+  background: #E2E8F0;
+}
+
+.settings-page {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(to bottom right, #F8FAFC, #E2E8F0);
+  z-index: 2000;
+  display: flex;
+  flex-direction: column;
+}
+
+.settings-page-header {
+  padding: 20px 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(255,255,255,0.8);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgba(0,0,0,0.05);
+}
+
+.settings-page-header h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.settings-close-btn, .settings-save-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.settings-close-btn {
+  background: #F1F5F9;
+  color: var(--text-secondary);
+}
+
+.settings-close-btn:hover {
+  background: #E2E8F0;
+  color: var(--text-primary);
+}
+
+.settings-save-btn {
+  background: var(--primary-gradient);
+  color: white;
+  width: auto;
+  padding: 0 20px;
+}
+
+.settings-save-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px var(--primary-shadow);
+}
+
+.settings-tabs {
+  display: flex;
+  gap: 8px;
+  padding: 16px 24px 0;
+  background: transparent;
+}
+
+.settings-tab-btn {
+  padding: 10px 16px;
+  border: none;
+  background: rgba(255,255,255,0.6);
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: 12px 12px 0 0;
+  transition: all 0.2s;
+}
+
+.settings-tab-btn.active {
+  background: #FFFFFF;
+  color: #6366F1;
+  box-shadow: 0 -2px 8px rgba(0,0,0,0.04);
+}
+
+.settings-tab-btn:hover {
+  background: rgba(255,255,255,0.8);
+}
+
+.settings-body {
+  flex: 1;
+  padding: 24px;
+  background: #FFFFFF;
+  overflow-y: auto;
+  margin: 0 24px 24px;
+  border-radius: 0 16px 16px 16px;
+  box-shadow: 0 4px 6px -1px rgba(0,0,0,0.02);
+}
+
+.btn-test-full {
+  width: 100%;
+  padding: 12px;
+  background: #F1F5F9;
+  color: var(--text-primary);
+  border: none;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-top: 8px;
+}
+
+.btn-test-full:hover:not(:disabled) {
+  background: #E2E8F0;
+}
+
+.btn-test-full:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 </style>

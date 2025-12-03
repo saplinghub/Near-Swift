@@ -10,6 +10,7 @@ let currentIndex = 0;
 let updateInterval = null;
 
 const dataPath = path.join(app.getPath('userData'), 'countdowns.json');
+const configPath = path.join(app.getPath('userData'), 'ai-config.json');
 
 // 隐藏 Dock 图标
 if (process.platform === 'darwin') {
@@ -212,6 +213,20 @@ ipcMain.handle('pin-countdown', (_event, id) => {
   saveCountdowns(countdowns);
   updateTrayTitle();
   return countdowns;
+});
+
+ipcMain.handle('get-ai-config', () => {
+  try {
+    if (fs.existsSync(configPath)) {
+      return JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    }
+  } catch (e) {}
+  return null;
+});
+
+ipcMain.handle('save-ai-config', (_event, config) => {
+  fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+  return config;
 });
 
 app.on('before-quit', () => {

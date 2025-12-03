@@ -10,6 +10,7 @@
     "build:mac": "vite build && electron-builder --mac"
   },
   "dependencies": {
+    "axios": "^1.13.2",
     "vue": "^3.3.0"
   },
   "devDependencies": {
@@ -21,9 +22,16 @@
   "build": {
     "appId": "com.saplinghub.near",
     "productName": "Near",
-    "files": ["dist/**/*", "src/main.js", "src/preload.js"],
+    "files": [
+      "dist/**/*",
+      "src/main.js",
+      "src/preload.js"
+    ],
     "mac": {
-      "target": ["dmg", "zip"],
+      "target": [
+        "dmg",
+        "zip"
+      ],
       "category": "public.app-category.utilities"
     }
   }
