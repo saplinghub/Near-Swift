@@ -200,6 +200,7 @@ pub fn main() {
                 })
                 .build(app)?;
 
+            // 失焦自动隐藏窗口
             if let Some(win) = app.get_webview_window("main") {
                 let handle = app_handle.clone();
                 win.on_window_event(move |event| {

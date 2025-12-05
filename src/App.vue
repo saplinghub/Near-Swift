@@ -38,7 +38,9 @@
           <p>暂无{{ currentTab === 'upcoming' ? '进行中' : '已结束' }}的事件</p>
         </div>
 
-        <div v-for="item in filteredCountdowns" :key="item.id" class="list-item" @mousedown.stop @click="editCountdown(item)">
+        <div v-for="item in filteredCountdowns" :key="item.id"
+          class="list-item"
+          :data-id="item.id">
           <!-- 左侧图标 -->
           <div class="item-icon" :class="item.iconType || 'rocket'">
             <span v-html="getIconSvg(item.iconType)"></span>
@@ -69,8 +71,11 @@
           </div>
 
           <!-- 按钮组 (绝对定位，但有足够的 padding 保护内容) -->
-          <div class="item-actions" @click.stop>
-            <button class="action-btn delete" @click.stop="deleteCountdown(item.id)" title="删���">
+          <div class="item-actions">
+            <button
+              class="action-btn delete"
+              @click.stop="deleteCountdown(item.id)"
+              title="删除">
               <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
             </button>
             
@@ -100,8 +105,9 @@
 
     <!-- 设置页面 -->
     <transition name="slide">
-      <div v-if="showSettings" class="settings-page">
-        <div class="settings-page-header">
+      <div v-if="showSettings" class="modal-overlay" @click="showSettings = false">
+        <div class="settings-page" @click.stop>
+          <div class="settings-page-header">
           <button class="settings-close-btn" @click="showSettings = false">
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
               <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -139,12 +145,14 @@
             {{ aiLoading ? '测试中...' : '🧪 测试连接' }}
           </button>
         </div>
+        </div>
       </div>
     </transition>
 
     <!-- 添加/编辑页面 -->
     <transition name="slide">
-      <div v-if="showForm" class="form-page">
+      <div v-if="showForm" class="modal-overlay" @click="cancelEdit">
+        <div class="form-page" @click.stop>
         <div class="form-page-header">
           <button class="header-close-btn" @click="cancelEdit">
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
@@ -197,13 +205,14 @@
             </div>
           </div>
         </div>
+        </div>
       </div>
     </transition>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue';
+import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { AIService } from './ai-service.js';
 import Sortable from 'sortablejs';
@@ -219,7 +228,72 @@ const aiConfig = ref({ baseURL: '', apiKey: '', model: '' });
 const aiLoading = ref(false);
 const editingId = ref(null);
 let timer = null;
-let sortable = null;
+let sortableInstance = null;
+
+const initSortable = () => {
+  nextTick(() => {
+    const container = document.querySelector('.list-container');
+    console.log('initSortable called, container:', container);
+    console.log('container children:', container?.children.length);
+
+    if (!container) return;
+
+    if (sortableInstance) {
+      sortableInstance.destroy();
+    }
+
+    sortableInstance = Sortable.create(container, {
+      animation: 150,
+      forceFallback: true,
+      fallbackClass: 'sortable-fallback',
+      ghostClass: 'sortable-ghost',
+      chosenClass: 'sortable-chosen',
+      dragClass: 'sortable-drag',
+      filter: '.empty-state',
+      onStart: (evt) => {
+        console.log('Sortable onStart:', evt.oldIndex);
+      },
+      onEnd: async (evt) => {
+        console.log('Sortable onEnd:', evt.oldIndex, '->', evt.newIndex);
+        const { oldIndex, newIndex } = evt;
+        if (oldIndex === newIndex) return;
+
+        try {
+          const filtered = filteredCountdowns.value;
+
+          const ids = [...filtered.map(f => f.id)];
+          const [movedId] = ids.splice(oldIndex, 1);
+          ids.splice(newIndex, 0, movedId);
+
+          for (let i = 0; i < ids.length; i++) {
+            const item = countdowns.value.find(c => c.id === ids[i]);
+            if (item) item.order = i;
+          }
+
+          countdowns.value = [...countdowns.value];
+
+          for (const item of countdowns.value) {
+            if (ids.includes(item.id)) {
+              await invoke('save_countdown', { countdown: item });
+            }
+          }
+
+          showToast('排序已保存', 'success');
+        } catch (error) {
+          console.error('排序失败:', error);
+          showToast('排序失败: ' + error, 'error');
+          await loadCountdowns();
+        }
+      }
+    });
+
+    console.log('Sortable instance created:', sortableInstance);
+  });
+};
+
+watch(currentTab, () => {
+  initSortable();
+});
 
 // 图标 SVG 定义
 const icons = {
@@ -249,9 +323,6 @@ const loadCountdowns = async () => {
     }
     return { ...item, order: item.order || 0 };
   });
-
-  await nextTick();
-  initSortable();
 };
 
 const filteredCountdowns = computed(() => {
@@ -361,10 +432,6 @@ const resetForm = () => {
 
 const deleteCountdown = async (id) => {
   console.log('[删除] 开始删除，ID:', id);
-  if(!confirm('确定要删除这个事件吗？')) {
-    console.log('[删除] 用户取消');
-    return;
-  }
 
   try {
     console.log('[删除] 调用 Tauri 命令');
@@ -467,73 +534,10 @@ const parseWithAI = async () => {
   }
 };
 
-const initSortable = () => {
-  console.log('[排序] 初始化拖拽排序');
-  if (sortable) {
-    console.log('[排序] 销毁旧实例');
-    sortable.destroy();
-    sortable = null;
-  }
-
-  nextTick(() => {
-    const container = document.querySelector('.list-container');
-    console.log('[排序] 容器元素:', container);
-    if (!container) {
-      console.error('[排序] 未找到容器');
-      return;
-    }
-
-    const items = container.querySelectorAll('.list-item');
-    console.log('[排序] 找到列表项数量:', items.length);
-
-    sortable = Sortable.create(container, {
-      animation: 150,
-      ghostClass: 'sortable-ghost',
-      dragClass: 'sortable-drag',
-      draggable: '.list-item',
-      filter: '.item-actions',
-      preventOnFilter: false,
-      onStart: (evt) => {
-        console.log('[排序] 开始拖拽，索引:', evt.oldIndex);
-      },
-      onEnd: async (evt) => {
-        console.log('[排序] 结束拖拽，从', evt.oldIndex, '到', evt.newIndex);
-        if (evt.oldIndex === evt.newIndex) {
-          console.log('[排序] 位置未变化，跳过');
-          return;
-        }
-
-        try {
-          const items = [...filteredCountdowns.value];
-          console.log('[排序] 当前列表项数:', items.length);
-          const movedItem = items[evt.oldIndex];
-          console.log('[排序] 移动项:', movedItem);
-
-          items.splice(evt.oldIndex, 1);
-          items.splice(evt.newIndex, 0, movedItem);
-
-          for (let i = 0; i < items.length; i++) {
-            items[i].order = i;
-            console.log('[排序] 保存项', i, ':', items[i].name);
-            await invoke('save_countdown', { countdown: items[i] });
-          }
-
-          showToast('排序已保存', 'success');
-          await loadCountdowns();
-          console.log('[排序] 完成');
-        } catch (error) {
-          console.error('[排序] 失败:', error);
-          showToast('排序失败: ' + error, 'error');
-        }
-      }
-    });
-    console.log('[排序] Sortable 实例创建完成');
-  });
-};
-
-onMounted(() => {
-  loadCountdowns();
+onMounted(async () => {
+  await loadCountdowns();
   loadAIConfig();
+  initSortable();
   timer = setInterval(() => {
     countdowns.value = [...countdowns.value];
   }, 60000);
@@ -541,7 +545,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   if (timer) clearInterval(timer);
-  if (sortable) sortable.destroy();
+  if (sortableInstance) sortableInstance.destroy();
 });
 </script>
 
@@ -684,15 +688,14 @@ html, body {
   display: flex;
   align-items: center;
   gap: 12px;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all 0.15s ease-out;
   position: relative;
   box-shadow: 0 2px 4px -1px rgba(0, 0, 0, 0.02);
   border: 1px solid rgba(255,255,255,0.5);
-  cursor: pointer;
+  cursor: grab;
 }
 
-.list-item:hover {
-  transform: translateY(-2px);
+.list-item:hover:not(.sortable-drag) {
   box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.02);
 }
 
@@ -837,6 +840,7 @@ html, body {
   flex-direction: column;
   justify-content: space-between;
   padding: 8px 0;
+  pointer-events: auto;
 }
 
 .action-btn {
@@ -1119,17 +1123,28 @@ html, body {
   background: #E2E8F0;
 }
 
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.3);
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+}
+
 .settings-page, .form-page {
-  position: absolute;
-  top: 12px;
-  left: 12px;
-  right: 12px;
-  bottom: 12px;
+  width: 100%;
+  height: 100%;
   background: linear-gradient(to bottom right, var(--bg-gradient-start), var(--bg-gradient-end));
   border: 1px solid #FFFFFF;
   border-radius: 20px;
   box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0,0,0,0.02);
-  z-index: 2000;
+  z-index: 2001;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -1274,12 +1289,24 @@ html, body {
   cursor: not-allowed;
 }
 
+.sortable-fallback {
+  opacity: 0.9;
+  box-shadow: 0 8px 25px rgba(99, 102, 241, 0.4);
+}
+
 .sortable-ghost {
   opacity: 0.4;
+  background: #E0E7FF !important;
+  border: 2px dashed #6366F1 !important;
+}
+
+.sortable-chosen {
+  box-shadow: 0 8px 25px rgba(99, 102, 241, 0.3);
 }
 
 .sortable-drag {
-  cursor: grabbing !important;
+  opacity: 0.9;
+  transform: scale(1.02);
 }
 
 .list-item {
