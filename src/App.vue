@@ -202,6 +202,7 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { invoke } from '@tauri-apps/api/core';
 import { AIService } from './ai-service.js';
 
 const countdowns = ref([]);
@@ -228,7 +229,7 @@ const icons = {
 const getIconSvg = (type) => icons[type] || icons.rocket;
 
 const loadCountdowns = async () => {
-  const data = await window.electronAPI.getCountdowns();
+  const data = await invoke('get_countdowns');
   countdowns.value = data.map(item => {
     if (!item.startDate) {
       const target = new Date(item.date);
@@ -305,13 +306,15 @@ const addCountdown = async () => {
 
   const startDate = form.value.startDate || new Date().toISOString();
 
-  await window.electronAPI.saveCountdown({
-    id: editingId.value,
-    name: form.value.name,
-    date: form.value.date,
-    startDate: startDate,
-    iconType: form.value.iconType,
-    createdAt: new Date().toISOString()
+  await invoke('save_countdown', {
+    countdown: {
+      id: editingId.value,
+      name: form.value.name,
+      date: form.value.date,
+      startDate: startDate,
+      iconType: form.value.iconType,
+      createdAt: new Date().toISOString()
+    }
   });
 
   resetForm();
@@ -345,18 +348,18 @@ const resetForm = () => {
 
 const deleteCountdown = async (id) => {
   if(confirm('确定要删除这个事件吗？')) {
-    await window.electronAPI.deleteCountdown(id);
+    await invoke('delete_countdown', { id });
     await loadCountdowns();
   }
 };
 
 const pinCountdown = async (id) => {
-  await window.electronAPI.pinCountdown(id);
+  await invoke('pin_countdown', { id });
   await loadCountdowns();
 };
 
 const loadAIConfig = async () => {
-  const config = await window.electronAPI.getAIConfig();
+  const config = await invoke('get_ai_config');
   if (config) {
     aiConfig.value = config;
   }
@@ -369,7 +372,7 @@ const saveAIConfigData = async () => {
       apiKey: aiConfig.value.apiKey,
       model: aiConfig.value.model
     };
-    await window.electronAPI.saveAIConfig(config);
+    await invoke('save_ai_config', { config });
     alert('✅ 配置保存成功');
     showSettings.value = false;
   } catch (error) {
@@ -999,15 +1002,19 @@ html, body {
 }
 
 .settings-page {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: linear-gradient(to bottom right, #F8FAFC, #E2E8F0);
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  background: linear-gradient(to bottom right, var(--bg-gradient-start), var(--bg-gradient-end));
+  border: 1px solid #FFFFFF;
+  border-radius: 20px;
+  box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0,0,0,0.02);
   z-index: 2000;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .settings-page-header {

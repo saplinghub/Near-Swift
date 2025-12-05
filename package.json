@@ -2,12 +2,11 @@
   "name": "near",
   "version": "1.0.0",
   "description": "越近越重要，越近越靠前",
-  "main": "src/main.cjs",
   "scripts": {
     "dev": "vite",
-    "dev:electron": "ELECTRON_ENV=development electron .",
-    "build": "vite build && electron-builder",
-    "build:mac": "vite build && electron-builder --mac"
+    "tauri:dev": "cargo tauri dev",
+    "build": "vite build",
+    "tauri:build": "cargo tauri build"
   },
   "dependencies": {
     "axios": "^1.13.2",
@@ -17,27 +16,6 @@
     "@tauri-apps/api": "^2.9.1",
     "@tauri-apps/cli": "^2.9.5",
     "@vitejs/plugin-vue": "^4.5.0",
-    "electron": "^27.0.0",
-    "electron-builder": "^24.6.4",
     "vite": "^5.0.0"
-  },
-  "build": {
-    "appId": "com.saplinghub.near",
-    "productName": "Near",
-    "files": [
-      "dist/**/*",
-      "src/main.cjs",
-      "src/preload.cjs",
-      "!**/*.map",
-      "!**/*.md"
-    ],
-    "asarUnpack": [],
-    "mac": {
-      "target": [
-        "dmg",
-        "zip"
-      ],
-      "category": "public.app-category.utilities"
-    }
   }
 }
