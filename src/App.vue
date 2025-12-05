@@ -38,7 +38,7 @@
           <p>暂无{{ currentTab === 'upcoming' ? '进行中' : '已结束' }}的事件</p>
         </div>
 
-        <div v-for="item in filteredCountdowns" :key="item.id" class="list-item" @click="editCountdown(item)">
+        <div v-for="item in filteredCountdowns" :key="item.id" class="list-item" @mousedown.stop @click="editCountdown(item)">
           <!-- 左侧图标 -->
           <div class="item-icon" :class="item.iconType || 'rocket'">
             <span v-html="getIconSvg(item.iconType)"></span>
@@ -47,8 +47,8 @@
           <!-- 中间信息 -->
           <div class="item-content">
             <div class="item-header-row">
-              <span class="item-title">{{ item.name }}</span>
-              <span class="item-date-small">{{ formatDate(item.date) }}</span>
+              <div class="item-title">{{ item.name }}</div>
+              <div class="item-date-small">{{ formatDate(item.date) }}</div>
             </div>
             
             <div class="item-details">
@@ -99,17 +99,18 @@
     </div>
 
     <!-- 设置页面 -->
-    <div v-if="showSettings" class="settings-page">
-      <div class="settings-page-header">
-        <button class="settings-close-btn" @click="showSettings = false">
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
-            <line x1="18" y1="6" x2="6" y2="18"></line>
-            <line x1="6" y1="6" x2="18" y2="18"></line>
-          </svg>
-        </button>
-        <h2>设置</h2>
-        <button class="settings-save-btn" @click="saveAIConfigData">保存</button>
-      </div>
+    <transition name="slide">
+      <div v-if="showSettings" class="settings-page">
+        <div class="settings-page-header">
+          <button class="settings-close-btn" @click="showSettings = false">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+          <h2>设置</h2>
+          <button class="settings-save-btn" @click="saveAIConfigData">保存</button>
+        </div>
 
       <div class="settings-tabs">
         <button
@@ -121,34 +122,41 @@
         </button>
       </div>
 
-      <div class="settings-body" v-if="settingsTab === 'ai'">
-        <div class="form-group">
-          <label>API URL</label>
-          <input v-model="aiConfig.baseURL" placeholder="https://your-api.com" />
+        <div class="settings-body" v-if="settingsTab === 'ai'">
+          <div class="form-group">
+            <label>API URL</label>
+            <input v-model="aiConfig.baseURL" placeholder="https://your-api.com" />
+          </div>
+          <div class="form-group">
+            <label>API Key</label>
+            <input v-model="aiConfig.apiKey" type="password" placeholder="sk-..." />
+          </div>
+          <div class="form-group">
+            <label>模型</label>
+            <input v-model="aiConfig.model" placeholder="gpt-4" />
+          </div>
+          <button class="btn-test-full" @click="testAIConfig" :disabled="aiLoading">
+            {{ aiLoading ? '测试中...' : '🧪 测试连接' }}
+          </button>
         </div>
-        <div class="form-group">
-          <label>API Key</label>
-          <input v-model="aiConfig.apiKey" type="password" placeholder="sk-..." />
-        </div>
-        <div class="form-group">
-          <label>模型</label>
-          <input v-model="aiConfig.model" placeholder="gpt-4" />
-        </div>
-        <button class="btn-test-full" @click="testAIConfig" :disabled="aiLoading">
-          {{ aiLoading ? '测试中...' : '🧪 测试连接' }}
-        </button>
       </div>
-    </div>
+    </transition>
 
-    <!-- 添加/编辑 模态框 -->
-    <div v-if="showForm" class="modal-overlay" @click.self="cancelEdit">
-      <div class="modal-card">
-        <div class="modal-header">
+    <!-- 添加/编辑页面 -->
+    <transition name="slide">
+      <div v-if="showForm" class="form-page">
+        <div class="form-page-header">
+          <button class="header-close-btn" @click="cancelEdit">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
           <h2>{{ editingId ? '编辑倒计时' : '新建倒计时' }}</h2>
-          <button class="close-modal-btn" @click="cancelEdit">×</button>
+          <button class="header-save-btn" @click="addCountdown" :disabled="!form.name || !form.date">保存</button>
         </div>
-        
-        <div class="form-body">
+
+        <div class="form-page-body">
           <div class="form-group">
             <label>AI 智能解析</label>
             <div class="ai-input-group">
@@ -189,21 +197,16 @@
             </div>
           </div>
         </div>
-
-        <div class="modal-actions">
-          <button class="btn-save" @click="addCountdown" :disabled="!form.name || !form.date">
-            {{ editingId ? '保存修改' : '创建事件' }}
-          </button>
-        </div>
       </div>
-    </div>
+    </transition>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { AIService } from './ai-service.js';
+import Sortable from 'sortablejs';
 
 const countdowns = ref([]);
 const currentTab = ref('upcoming');
@@ -216,6 +219,7 @@ const aiConfig = ref({ baseURL: '', apiKey: '', model: '' });
 const aiLoading = ref(false);
 const editingId = ref(null);
 let timer = null;
+let sortable = null;
 
 // 图标 SVG 定义
 const icons = {
@@ -235,28 +239,31 @@ const loadCountdowns = async () => {
       const target = new Date(item.date);
       const start = item.createdAt ? new Date(item.createdAt) : new Date(target);
       if (!item.createdAt) start.setDate(start.getDate() - 30);
-      
+
       const toLocalISO = (d) => {
         const pad = (n) => n < 10 ? '0' + n : n;
         return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
       };
-      
-      return { ...item, startDate: toLocalISO(start), iconType: item.iconType || 'rocket' };
+
+      return { ...item, startDate: toLocalISO(start), iconType: item.iconType || 'rocket', order: item.order || 0 };
     }
-    return item;
+    return { ...item, order: item.order || 0 };
   });
+
+  await nextTick();
+  initSortable();
 };
 
 const filteredCountdowns = computed(() => {
   const now = new Date();
   now.setHours(0,0,0,0);
-  
+
   return countdowns.value.filter(item => {
     const target = new Date(item.date);
     target.setHours(0,0,0,0);
     const isCompleted = target < now;
     return currentTab.value === 'completed' ? isCompleted : !isCompleted;
-  }).sort((a, b) => new Date(a.date) - new Date(b.date));
+  }).sort((a, b) => (a.order || 0) - (b.order || 0));
 });
 
 const calculateDays = (targetDate) => {
@@ -306,19 +313,25 @@ const addCountdown = async () => {
 
   const startDate = form.value.startDate || new Date().toISOString();
 
-  await invoke('save_countdown', {
-    countdown: {
-      id: editingId.value,
-      name: form.value.name,
-      date: form.value.date,
-      startDate: startDate,
-      iconType: form.value.iconType,
-      createdAt: new Date().toISOString()
-    }
-  });
+  try {
+    await invoke('save_countdown', {
+      countdown: {
+        id: editingId.value || `countdown-${Date.now()}`,
+        name: form.value.name,
+        date: form.value.date,
+        startDate: startDate,
+        iconType: form.value.iconType,
+        createdAt: new Date().toISOString(),
+        order: countdowns.value.length
+      }
+    });
 
-  resetForm();
-  await loadCountdowns();
+    resetForm();
+    await loadCountdowns();
+  } catch (error) {
+    console.error('保存倒计时失败:', error);
+    alert('保存失败: ' + error);
+  }
 };
 
 const editCountdown = (item) => {
@@ -347,15 +360,33 @@ const resetForm = () => {
 };
 
 const deleteCountdown = async (id) => {
-  if(confirm('确定要删除这个事件吗？')) {
-    await invoke('delete_countdown', { id });
+  console.log('[删除] 开始删除，ID:', id);
+  if(!confirm('确定要删除这个事件吗？')) {
+    console.log('[删除] 用户取消');
+    return;
+  }
+
+  try {
+    console.log('[删除] 调用 Tauri 命令');
+    const result = await invoke('delete_countdown', { id: id });
+    console.log('[删除] Tauri 返回:', result);
+    showToast('删除成功', 'success');
     await loadCountdowns();
+    console.log('[删除] 完成');
+  } catch (error) {
+    console.error('[删除] 失败:', error);
+    showToast('删除失败: ' + error, 'error');
   }
 };
 
 const pinCountdown = async (id) => {
-  await invoke('pin_countdown', { id });
-  await loadCountdowns();
+  try {
+    await invoke('pin_countdown', { id: id });
+    await loadCountdowns();
+  } catch (error) {
+    console.error('置顶失败:', error);
+    showToast('置顶失败: ' + error, 'error');
+  }
 };
 
 const loadAIConfig = async () => {
@@ -382,7 +413,7 @@ const saveAIConfigData = async () => {
 
 const testAIConfig = async () => {
   if (!aiConfig.value.baseURL || !aiConfig.value.apiKey || !aiConfig.value.model) {
-    alert('⚠️ 请先填写完整配置');
+    showToast('⚠️ 请先填写完整配置', 'warning');
     return;
   }
 
@@ -390,12 +421,25 @@ const testAIConfig = async () => {
   try {
     const service = new AIService(aiConfig.value);
     await service.parseCountdown('测试连接');
-    alert('✅ 连接成功！AI 配置正常');
+    showToast('✅ 连接成功！AI 配置正常', 'success');
   } catch (error) {
-    alert('❌ 连接失败: ' + error.message);
+    showToast('❌ 连接失败: ' + error.message, 'error');
   } finally {
     aiLoading.value = false;
   }
+};
+
+const showToast = (message, type = 'info') => {
+  const toast = document.createElement('div');
+  toast.className = `toast toast-${type}`;
+  toast.textContent = message;
+  document.body.appendChild(toast);
+
+  setTimeout(() => toast.classList.add('show'), 10);
+  setTimeout(() => {
+    toast.classList.remove('show');
+    setTimeout(() => toast.remove(), 300);
+  }, 3000);
 };
 
 const parseWithAI = async () => {
@@ -423,6 +467,70 @@ const parseWithAI = async () => {
   }
 };
 
+const initSortable = () => {
+  console.log('[排序] 初始化拖拽排序');
+  if (sortable) {
+    console.log('[排序] 销毁旧实例');
+    sortable.destroy();
+    sortable = null;
+  }
+
+  nextTick(() => {
+    const container = document.querySelector('.list-container');
+    console.log('[排序] 容器元素:', container);
+    if (!container) {
+      console.error('[排序] 未找到容器');
+      return;
+    }
+
+    const items = container.querySelectorAll('.list-item');
+    console.log('[排序] 找到列表项数量:', items.length);
+
+    sortable = Sortable.create(container, {
+      animation: 150,
+      ghostClass: 'sortable-ghost',
+      dragClass: 'sortable-drag',
+      draggable: '.list-item',
+      filter: '.item-actions',
+      preventOnFilter: false,
+      onStart: (evt) => {
+        console.log('[排序] 开始拖拽，索引:', evt.oldIndex);
+      },
+      onEnd: async (evt) => {
+        console.log('[排序] 结束拖拽，从', evt.oldIndex, '到', evt.newIndex);
+        if (evt.oldIndex === evt.newIndex) {
+          console.log('[排序] 位置未变化，跳过');
+          return;
+        }
+
+        try {
+          const items = [...filteredCountdowns.value];
+          console.log('[排序] 当前列表项数:', items.length);
+          const movedItem = items[evt.oldIndex];
+          console.log('[排序] 移动项:', movedItem);
+
+          items.splice(evt.oldIndex, 1);
+          items.splice(evt.newIndex, 0, movedItem);
+
+          for (let i = 0; i < items.length; i++) {
+            items[i].order = i;
+            console.log('[排序] 保存项', i, ':', items[i].name);
+            await invoke('save_countdown', { countdown: items[i] });
+          }
+
+          showToast('排序已保存', 'success');
+          await loadCountdowns();
+          console.log('[排序] 完成');
+        } catch (error) {
+          console.error('[排序] 失败:', error);
+          showToast('排序失败: ' + error, 'error');
+        }
+      }
+    });
+    console.log('[排序] Sortable 实例创建完成');
+  });
+};
+
 onMounted(() => {
   loadCountdowns();
   loadAIConfig();
@@ -433,6 +541,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   if (timer) clearInterval(timer);
+  if (sortable) sortable.destroy();
 });
 </script>
 
@@ -561,6 +670,7 @@ html, body {
   gap: 10px;
   background: transparent;
   padding-bottom: 80px;
+  position: relative;
 }
 
 .list-container::-webkit-scrollbar {
@@ -619,6 +729,14 @@ html, body {
   margin-bottom: 2px;
 }
 
+.item-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}
+
 .item-title {
   font-size: 15px;
   font-weight: 600;
@@ -627,6 +745,17 @@ html, body {
   overflow: hidden;
   text-overflow: ellipsis;
   flex: 1;
+  text-align: left;
+}
+
+.item-date-small {
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-weight: 500;
+  white-space: nowrap;
+  text-align: right;
+  flex-shrink: 0;
+  margin-left: auto;
 }
 
 .item-info {
@@ -747,15 +876,15 @@ html, body {
 /* FAB */
 .fab-btn {
   position: absolute;
-  bottom: 24px;
-  right: 24px;
-  width: 56px;
-  height: 56px;
+  bottom: 12px;
+  right: 12px;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
   background: var(--primary-gradient);
   color: white;
   border: none;
-  box-shadow: 0 10px 20px -5px var(--primary-shadow);
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -764,74 +893,63 @@ html, body {
   z-index: 20;
 }
 
+.fab-btn svg {
+  width: 20px;
+  height: 20px;
+  transition: all 0.3s;
+}
+
 .fab-btn:hover {
-  transform: scale(1.1) rotate(90deg);
-  box-shadow: 0 15px 25px -5px var(--primary-shadow);
+  width: 56px;
+  height: 56px;
+  transform: rotate(90deg);
+  box-shadow: 0 10px 20px -5px var(--primary-shadow);
 }
 
-/* Modal Card */
-.modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(255,255,255,0.8);
-  backdrop-filter: blur(4px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
+.fab-btn:hover svg {
+  width: 24px;
+  height: 24px;
 }
 
-.modal-card {
-  background: #FFFFFF;
-  padding: 0;
-  border-radius: 24px;
-  width: 340px;
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15);
-  overflow: hidden;
-  border: 1px solid rgba(0,0,0,0.02);
-  animation: popIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-
-.modal-header {
-  padding: 20px 24px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  background: #FFFFFF;
-}
-
-.modal-header h2 {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--text-primary);
-}
-
-.close-modal-btn {
-  background: #F1F5F9;
+.header-close-btn, .header-save-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
   border: none;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  font-size: 18px;
-  color: var(--text-secondary);
-  cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
+  cursor: pointer;
   transition: all 0.2s;
+  font-size: 14px;
+  font-weight: 600;
 }
 
-.close-modal-btn:hover {
+.header-close-btn {
+  background: #F1F5F9;
+  color: var(--text-secondary);
+}
+
+.header-close-btn:hover {
   background: #E2E8F0;
   color: var(--text-primary);
 }
 
-.form-body {
-  padding: 0 24px 24px;
+.header-save-btn {
+  background: var(--primary-gradient);
+  color: white;
+  width: auto;
+  padding: 0 20px;
+}
+
+.header-save-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px var(--primary-shadow);
+}
+
+.header-save-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .form-group {
@@ -1001,7 +1119,7 @@ html, body {
   background: #E2E8F0;
 }
 
-.settings-page {
+.settings-page, .form-page {
   position: absolute;
   top: 12px;
   left: 12px;
@@ -1017,7 +1135,19 @@ html, body {
   overflow: hidden;
 }
 
-.settings-page-header {
+.slide-enter-active, .slide-leave-active {
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.slide-enter-from {
+  transform: translateX(100%);
+}
+
+.slide-leave-to {
+  transform: translateX(100%);
+}
+
+.settings-page-header, .form-page-header {
   padding: 20px 24px;
   display: flex;
   justify-content: space-between;
@@ -1027,11 +1157,23 @@ html, body {
   border-bottom: 1px solid rgba(0,0,0,0.05);
 }
 
-.settings-page-header h2 {
+.settings-page-header h2, .form-page-header h2 {
   margin: 0;
   font-size: 18px;
   font-weight: 700;
   color: var(--text-primary);
+  flex: 1;
+  text-align: center;
+}
+
+.form-page-body {
+  flex: 1;
+  padding: 24px;
+  background: #FFFFFF;
+  overflow-y: auto;
+  margin: 0 24px 24px;
+  border-radius: 16px;
+  box-shadow: 0 4px 6px -1px rgba(0,0,0,0.02);
 }
 
 .settings-close-btn, .settings-save-btn {
@@ -1130,5 +1272,61 @@ html, body {
 .btn-test-full:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+.sortable-ghost {
+  opacity: 0.4;
+}
+
+.sortable-drag {
+  cursor: grabbing !important;
+}
+
+.list-item {
+  cursor: grab;
+}
+
+.list-item:active {
+  cursor: grabbing;
+}
+
+.toast {
+  position: fixed;
+  top: 24px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-100px);
+  background: #FFFFFF;
+  padding: 12px 24px;
+  border-radius: 12px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+  font-size: 14px;
+  font-weight: 600;
+  z-index: 10000;
+  opacity: 0;
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  border: 1px solid rgba(0,0,0,0.05);
+}
+
+.toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+.toast-success {
+  color: #10B981;
+  background: #ECFDF5;
+  border-color: #10B981;
+}
+
+.toast-error {
+  color: #EF4444;
+  background: #FEF2F2;
+  border-color: #EF4444;
+}
+
+.toast-warning {
+  color: #F59E0B;
+  background: #FFFBEB;
+  border-color: #F59E0B;
 }
 </style>

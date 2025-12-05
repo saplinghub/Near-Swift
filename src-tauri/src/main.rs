@@ -204,9 +204,17 @@ pub fn main() {
                 let handle = app_handle.clone();
                 win.on_window_event(move |event| {
                     if let tauri::WindowEvent::Focused(false) = event {
-                        if let Some(w) = handle.get_webview_window("main") {
-                            let _ = w.hide();
-                        }
+                        let h = handle.clone();
+                        thread::spawn(move || {
+                            thread::sleep(Duration::from_millis(500));
+                            if let Some(w) = h.get_webview_window("main") {
+                                if let Ok(focused) = w.is_focused() {
+                                    if !focused {
+                                        let _ = w.hide();
+                                    }
+                                }
+                            }
+                        });
                     }
                 });
             }
