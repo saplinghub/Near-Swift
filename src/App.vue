@@ -696,9 +696,9 @@ html, body {
   width: 100%;
   height: 100%;
   background: linear-gradient(to bottom right, var(--bg-gradient-start), var(--bg-gradient-end));
-  border: 1px solid #FFFFFF;
+  border: none;
   border-radius: 20px;
-  box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0,0,0,0.02);
+  box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.1);
   display: flex;
   flex-direction: column;
   position: relative;
@@ -1239,7 +1239,7 @@ html, body {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.3);
+  background: transparent;
   z-index: 2000;
   display: flex;
   align-items: center;
@@ -1251,9 +1251,9 @@ html, body {
   width: 100%;
   height: 100%;
   background: linear-gradient(to bottom right, var(--bg-gradient-start), var(--bg-gradient-end));
-  border: 1px solid #FFFFFF;
+  border: none;
   border-radius: 20px;
-  box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0,0,0,0.02);
+  box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.1);
   z-index: 2001;
   display: flex;
   flex-direction: column;
