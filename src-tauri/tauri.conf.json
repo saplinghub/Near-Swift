@@ -30,7 +30,8 @@
         "skipTaskbar": true,
         "visible": false,
         "hiddenTitle": true,
-        "focus": false
+        "focus": false,
+        "dragDropEnabled": false
       }
     ],
     "security": {

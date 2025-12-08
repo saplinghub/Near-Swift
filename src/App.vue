@@ -233,61 +233,122 @@ let sortableInstance = null;
 const initSortable = () => {
   nextTick(() => {
     const container = document.querySelector('.list-container');
-    console.log('initSortable called, container:', container);
-    console.log('container children:', container?.children.length);
-
     if (!container) return;
 
     if (sortableInstance) {
       sortableInstance.destroy();
     }
 
+    // 创建一个完全独立的数组副本用于拖拽处理
+    const getCountdownsCopy = () => {
+      return countdowns.value.map((item, index) => ({
+        ...item,
+        _originalIndex: index
+      }));
+    };
+
     sortableInstance = Sortable.create(container, {
-      animation: 150,
-      forceFallback: true,
+      animation: 120,
+      forceFallback: false,
       fallbackClass: 'sortable-fallback',
       ghostClass: 'sortable-ghost',
       chosenClass: 'sortable-chosen',
       dragClass: 'sortable-drag',
       filter: '.empty-state',
+      fallbackTolerance: 3,
+      sort: true,
+      delay: 0,
+      delayOnTouchStart: false,
+      touchStartThreshold: 0,
       onStart: (evt) => {
-        console.log('Sortable onStart:', evt.oldIndex);
+        console.log('🚀 [拖拽开始] oldIndex:', evt.oldIndex);
+        console.log('🚀 [拖拽开始] 当前显示的项目数量:', filteredCountdowns.value.length);
+        console.log('🚀 [拖拽开始] 拖拽项目ID:', filteredCountdowns.value[evt.oldIndex]?.id);
+        evt.item.style.cursor = 'grabbing';
       },
-      onEnd: async (evt) => {
-        console.log('Sortable onEnd:', evt.oldIndex, '->', evt.newIndex);
+      onEnd: (evt) => {
+        console.log('✅ [拖拽结束] oldIndex:', evt.oldIndex, '-> newIndex:', evt.newIndex);
+        console.log('✅ [拖拽结束] 是否真的移动了:', evt.oldIndex !== evt.newIndex);
+        evt.item.style.cursor = 'grab';
+
         const { oldIndex, newIndex } = evt;
-        if (oldIndex === newIndex) return;
+        if (oldIndex === newIndex) {
+          console.log('📌 [拖拽结束] 位置未变化，跳过');
+          return;
+        }
 
+        // 立即处理，不延迟
         try {
-          const filtered = filteredCountdowns.value;
+          console.log('🔍 [拖拽处理] 开始处理排序逻辑...');
 
-          const ids = [...filtered.map(f => f.id)];
-          const [movedId] = ids.splice(oldIndex, 1);
-          ids.splice(newIndex, 0, movedId);
+          // 使用带原始索引的副本
+          const allItems = getCountdownsCopy();
+          const filteredItems = filteredCountdowns.value;
 
-          for (let i = 0; i < ids.length; i++) {
-            const item = countdowns.value.find(c => c.id === ids[i]);
-            if (item) item.order = i;
+          console.log('🔍 [拖拽处理] 完整项目数量:', allItems.length);
+          console.log('🔍 [拖拽处理] 显示项目数量:', filteredItems.length);
+
+          // 找到实际在完整数组中的位置
+          const oldItem = filteredItems[oldIndex];
+          const newItem = filteredItems[newIndex];
+
+          const oldIndexInAll = allItems.findIndex(item =>
+            item.id === oldItem?.id
+          );
+          const newIndexInAll = allItems.findIndex(item =>
+            item.id === newItem?.id
+          );
+
+          console.log('🔍 [拖拽处理] oldIndexInAll:', oldIndexInAll, 'newIndexInAll:', newIndexInAll);
+
+          if (oldIndexInAll === -1 || newIndexInAll === -1) {
+            console.error('❌ [拖拽处理] 找不到项目在完整列表中的位置');
+            return;
           }
 
-          countdowns.value = [...countdowns.value];
+          // 重新计算 order 值 - 使用原始索引作为参考
+          const movedItem = allItems[oldIndexInAll];
+          console.log('🔍 [拖拽处理] 移动的项目:', movedItem.name, '(ID:', movedItem.id, ')');
 
-          for (const item of countdowns.value) {
-            if (ids.includes(item.id)) {
-              await invoke('save_countdown', { countdown: item });
-            }
+          // 移动项目
+          allItems.splice(oldIndexInAll, 1);
+          allItems.splice(newIndexInAll, 0, movedItem);
+
+          console.log('🔍 [拖拽处理] 移动后完整列表:');
+          allItems.forEach((item, index) => {
+            console.log(`  ${index}: ${item.name} (order: ${item.order})`);
+          });
+
+          // 更新所有项目的 order
+          for (let i = 0; i < allItems.length; i++) {
+            allItems[i].order = i;
           }
 
-          showToast('排序已保存', 'success');
+          // 批量更新到内存
+          countdowns.value = allItems.map(item => ({
+            ...item,
+            _originalIndex: undefined
+          }));
+          console.log('🔍 [拖拽处理] 已更新内存中的数据');
+
+          // 只保存移动的项目
+          console.log('🔍 [拖拽处理] 保存移动的项目到数据库...');
+          invoke('save_countdown', { countdown: movedItem }).then(() => {
+            console.log('✅ [拖拽处理] 保存成功');
+            showToast('排序已保存', 'success');
+          }).catch(error => {
+            console.error('❌ [拖拽失败]:', error);
+            showToast('排序失败: ' + error, 'error');
+            loadCountdowns();
+          });
+
         } catch (error) {
-          console.error('排序失败:', error);
+          console.error('❌ [拖拽失败]:', error);
           showToast('排序失败: ' + error, 'error');
-          await loadCountdowns();
+          loadCountdowns();
         }
       }
     });
-
-    console.log('Sortable instance created:', sortableInstance);
   });
 };
 
@@ -692,7 +753,7 @@ html, body {
   position: relative;
   box-shadow: 0 2px 4px -1px rgba(0, 0, 0, 0.02);
   border: 1px solid rgba(255,255,255,0.5);
-  cursor: grab;
+  user-select: none;
 }
 
 .list-item:hover:not(.sortable-drag) {
@@ -1290,32 +1351,37 @@ html, body {
 }
 
 .sortable-fallback {
-  opacity: 0.9;
-  box-shadow: 0 8px 25px rgba(99, 102, 241, 0.4);
+  opacity: 1;
+  background: var(--card-bg);
+  box-shadow: 0 8px 20px rgba(99, 102, 241, 0.25);
+  transform: scale(1.01);
+  z-index: 9999;
+  transition: all 0.2s ease-out;
 }
 
 .sortable-ghost {
-  opacity: 0.4;
-  background: #E0E7FF !important;
-  border: 2px dashed #6366F1 !important;
+  opacity: 0;
+  height: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border: none !important;
+  overflow: hidden;
+  transition: none;
 }
 
 .sortable-chosen {
-  box-shadow: 0 8px 25px rgba(99, 102, 241, 0.3);
+  box-shadow: 0 4px 15px rgba(99, 102, 241, 0.2);
+  transition: box-shadow 0.2s ease-out;
 }
 
 .sortable-drag {
-  opacity: 0.9;
-  transform: scale(1.02);
+  opacity: 0.85;
+  transform: scale(1.01);
+  cursor: grabbing !important;
+  transition: none;
+  z-index: 9999;
 }
 
-.list-item {
-  cursor: grab;
-}
-
-.list-item:active {
-  cursor: grabbing;
-}
 
 .toast {
   position: fixed;
