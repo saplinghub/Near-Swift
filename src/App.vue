@@ -126,6 +126,13 @@
         >
           ✨ AI 配置
         </button>
+        <button
+          class="settings-tab-btn"
+          :class="{ active: settingsTab === 'system' }"
+          @click="settingsTab = 'system'"
+        >
+          🖥️ 系统状态
+        </button>
       </div>
 
         <div class="settings-body" v-if="settingsTab === 'ai'">
@@ -144,6 +151,27 @@
           <button class="btn-test-full" @click="testAIConfig" :disabled="aiLoading">
             {{ aiLoading ? '测试中...' : '🧪 测试连接' }}
           </button>
+        </div>
+
+        <div class="settings-body" v-if="settingsTab === 'system'">
+          <div class="system-info">
+            <div class="info-item">
+              <span class="info-label">CPU 使用率</span>
+              <span class="info-value">{{ systemInfo.cpu }}%</span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">内存使用</span>
+              <span class="info-value">{{ systemInfo.memory }}</span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">系统温度</span>
+              <span class="info-value">{{ systemInfo.temperature }}</span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">运行时间</span>
+              <span class="info-value">{{ systemInfo.uptime }}</span>
+            </div>
+          </div>
         </div>
         </div>
       </div>
@@ -227,6 +255,12 @@ const aiInput = ref('');
 const aiConfig = ref({ baseURL: '', apiKey: '', model: '' });
 const aiLoading = ref(false);
 const editingId = ref(null);
+const systemInfo = ref({
+  cpu: '0',
+  memory: '0 MB',
+  temperature: '0°C',
+  uptime: '0分钟'
+});
 let timer = null;
 let sortableInstance = null;
 
@@ -335,7 +369,6 @@ const initSortable = () => {
           console.log('🔍 [拖拽处理] 保存移动的项目到数据库...');
           invoke('save_countdown', { countdown: movedItem }).then(() => {
             console.log('✅ [拖拽处理] 保存成功');
-            showToast('排序已保存', 'success');
           }).catch(error => {
             console.error('❌ [拖拽失败]:', error);
             showToast('排序失败: ' + error, 'error');
@@ -599,10 +632,26 @@ onMounted(async () => {
   await loadCountdowns();
   loadAIConfig();
   initSortable();
+  loadSystemInfo();
   timer = setInterval(() => {
     countdowns.value = [...countdowns.value];
+    loadSystemInfo();
   }, 60000);
 });
+
+const loadSystemInfo = async () => {
+  try {
+    const info = await invoke('get_system_stats');
+    systemInfo.value = {
+      cpu: Math.round(info.cpu || 0),
+      memory: `${Math.round((info.used_memory || 0) / 1024 / 1024)} MB`,
+      temperature: info.temperature ? `${Math.round(info.temperature)}°C` : 'N/A',
+      uptime: '运行中'
+    };
+  } catch (error) {
+    console.error('获取系统信息失败:', error);
+  }
+};
 
 onUnmounted(() => {
   if (timer) clearInterval(timer);
@@ -1281,6 +1330,7 @@ html, body {
   color: white;
   width: auto;
   padding: 0 20px;
+  display: none;
 }
 
 .settings-save-btn:hover {
@@ -1325,6 +1375,34 @@ html, body {
   margin: 0 24px 24px;
   border-radius: 0 16px 16px 16px;
   box-shadow: 0 4px 6px -1px rgba(0,0,0,0.02);
+}
+
+.system-info {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.info-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px;
+  background: #F8FAFC;
+  border-radius: 12px;
+  border: 1px solid #E2E8F0;
+}
+
+.info-label {
+  font-weight: 600;
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.info-value {
+  font-weight: 600;
+  color: #6366F1;
+  font-size: 14px;
 }
 
 .btn-test-full {
