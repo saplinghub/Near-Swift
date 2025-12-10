@@ -1,18 +1,7 @@
-node_modules/
-.spec-workflow/
 .DS_Store
-dist/
-release/
-*.log
-
-# Rust/Tauri
-src-tauri/target/
-src-tauri/Cargo.lock
-src-tauri/gen/
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
+/.build
+/Packages
+/NearCountdown/*.xcodeproj
+/NearCountdown/xcuserdata
+/NearCountdown/.DS_Store
+/NearCountdown/.build
