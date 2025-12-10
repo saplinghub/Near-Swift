@@ -18,9 +18,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         print("AppDelegate.applicationDidFinishLaunching called")
         NSApp.setActivationPolicy(.accessory)
 
-        let countdownManager = CountdownManager()
-        let aiService = AIService()
         let storageManager = StorageManager()
+        // Note: CountdownManager creates its own StorageManager instance internally. 
+        // Ideally we should inject it, but for now we won't touch CountdownManager constructor 
+        // to avoid cascading changes unless needed.
+        let countdownManager = CountdownManager() 
+        let aiService = AIService(storageManager: storageManager)
 
         statusBarManager = StatusBarManager(
             countdownManager: countdownManager,

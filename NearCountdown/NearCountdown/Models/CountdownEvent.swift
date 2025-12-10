@@ -73,7 +73,7 @@ struct CountdownEvent: Identifiable, Codable, Hashable {
             name: "新倒计时",
             startDate: Date(),
             targetDate: Calendar.current.date(byAdding: .day, value: 7, to: Date()) ?? Date(),
-            icon: .rocket,
+            icon: .star,
             isPinned: false,
             order: 0
         )

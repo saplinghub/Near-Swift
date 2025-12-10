@@ -12,12 +12,6 @@ class CountdownManager: ObservableObject {
 
     init() {
         countdowns = storageManager.countdowns
-
-        // 如果没有数据，添加一些测试数据
-        if countdowns.isEmpty {
-            addSampleData()
-        }
-
         updateFilteredCountdowns()
         startTimer()
     }
@@ -29,7 +23,7 @@ class CountdownManager: ObservableObject {
                 name: "春节假期",
                 startDate: Date(),
                 targetDate: Calendar.current.date(byAdding: .day, value: 45, to: Date()) ?? Date(),
-                icon: .rocket,
+                icon: .star,
                 isPinned: true,
                 order: 0
             ),
@@ -97,20 +91,18 @@ class CountdownManager: ObservableObject {
 
     func togglePin(_ id: UUID) {
         if let index = countdowns.firstIndex(where: { $0.id == id }) {
-            var countdown = countdowns[index]
-            countdown.isPinned.toggle()
-
-            if countdown.isPinned {
-                countdowns.removeAll { $0.id == id }
-                countdowns.insert(countdown, at: 0)
+            let wasPinned = countdowns[index].isPinned
+            
+            // Unpin all first
+            for i in 0..<countdowns.count {
+                countdowns[i].isPinned = false
             }
-
-            for (i, countdown) in countdowns.enumerated() {
-                var updated = countdown
-                updated.order = i
-                countdowns[i] = updated
+            
+            // If it wasn't pinned before, pin it now (if it was pinned, we just unpinned it above, effectively toggling off)
+            if !wasPinned {
+                countdowns[index].isPinned = true
             }
-
+            
             storageManager.saveCountdowns()
             updateFilteredCountdowns()
         }
@@ -181,19 +173,41 @@ class CountdownManager: ObservableObject {
         updateFilteredCountdowns()
     }
 
-    func moveCountdown(from sourceIndex: Int, to targetId: UUID) {
-        // 查找源和目标倒计时
-        guard let sourceIndex = countdowns.firstIndex(where: { $0.id == targetId }),
-              let targetIndex = countdowns.firstIndex(where: { $0.id == countdowns[sourceIndex].id }) else {
+    func moveCountdown(sourceId: UUID, destinationId: UUID) {
+        // Find indices
+        guard let sourceIndex = countdowns.firstIndex(where: { $0.id == sourceId }),
+              let destinationIndex = countdowns.firstIndex(where: { $0.id == destinationId }) else {
             return
         }
+        
+        // Don't move if same
+        if sourceIndex == destinationIndex { return }
 
-        // 移动倒计时
-        let movedCountdown = countdowns.remove(at: sourceIndex)
-        countdowns.insert(movedCountdown, at: targetIndex)
+        // Perform move
+        let item = countdowns.remove(at: sourceIndex)
+        countdowns.insert(item, at: destinationIndex)
 
-        // 更新过滤后的列表
-        updateFilteredCountdowns()
+        // Update orders
+        self.reindexCountdowns()
+    }
+    
+    func moveCountdownToEnd(sourceId: UUID) {
+         guard let sourceIndex = countdowns.firstIndex(where: { $0.id == sourceId }) else { return }
+         
+         let item = countdowns.remove(at: sourceIndex)
+         countdowns.append(item)
+         
+         self.reindexCountdowns()
+    }
+    
+    private func reindexCountdowns() {
+        for (index, countdown) in countdowns.enumerated() {
+            var updated = countdown
+            updated.order = index
+            countdowns[index] = updated
+        }
+        
         storageManager.saveCountdowns()
+        updateFilteredCountdowns()
     }
 }

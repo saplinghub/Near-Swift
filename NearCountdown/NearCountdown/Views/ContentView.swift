@@ -2,147 +2,168 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject var countdownManager: CountdownManager
+    // Add environment objects for others if needed directly, but usually they cascade
     @EnvironmentObject var aiService: AIService
-    @State private var showingAddSheet = false
-    @State private var showingSettingsSheet = false
+    @EnvironmentObject var storageManager: StorageManager
+    
+    @State private var showingAddView = false
+    @State private var showingSettingsView = false
     @State private var selectedTab = 0
 
     var body: some View {
-        ZStack(alignment: .bottomTrailing) {
+        ZStack {
             // Main Content Layer
             VStack(spacing: 0) {
-                // Modified Header (Now contains Tabs + Settings)
-                HeaderView(showingSettingsSheet: $showingSettingsSheet, selectedTab: $selectedTab)
-                    .zIndex(1) // Ensure header stays on top
-
-                // Scrollable Content Area
-                Group {
-                    if selectedTab == 0 {
-                        activeCountdownsView
-                    } else {
-                        completedCountdownsView
+                // Header linked to our state
+                HeaderView(showingSettingsSheet: $showingSettingsView, selectedTab: $selectedTab)
+                
+                // Content
+                VStack(spacing: 0) {
+                    // Main List Area
+                    Group {
+                        if selectedTab == 0 {
+                            activeCountdownsView
+                        } else {
+                            completedCountdownsView
+                        }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }
+            .blur(radius: (showingAddView || showingSettingsView) ? 10 : 0) // Blur effect when overlay is active
+            .disabled(showingAddView || showingSettingsView)
+            
+            // FAB (Floating Action Button) - Only show when no overlay
+            if !showingAddView && !showingSettingsView {
+                VStack {
+                    Spacer()
+                    HStack {
+                        Spacer()
+                        CollapsibleFab(action: {
+                            withAnimation(.spring()) {
+                                showingAddView = true
+                            }
+                        })
+                        .padding(.trailing, 20)
+                        .padding(.bottom, 20)
                     }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .transition(.scale)
             }
-            .frame(width: 380, height: 600)
-            .background(
-                ZStack {
-                    // 主背景
+            
+            // Overlays
+            if showingAddView {
+                // Dimming background
+                Color.black.opacity(0.2)
+                    .edgesIgnoringSafeArea(.all)
+                    .onTapGesture {
+                        withAnimation { showingAddView = false }
+                    }
+                
+                AddCountdownView(isPresented: $showingAddView)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color.nearBackgroundEnd) // Ensure background
+                    .cornerRadius(16) // Match window corner
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .zIndex(2)
+            }
+            
+            if showingSettingsView {
+                Color.black.opacity(0.2)
+                    .edgesIgnoringSafeArea(.all)
+                    .onTapGesture {
+                        withAnimation { showingSettingsView = false }
+                    }
+                
+                SettingsView(isPresented: $showingSettingsView)
+                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                     .background(Color.nearBackgroundEnd)
+                     .cornerRadius(16)
+                     .transition(.move(edge: .bottom).combined(with: .opacity))
+                     .zIndex(3)
+            }
+        }
+        .frame(width: 380, height: 600)
+        .background(
+             ZStack {
+                LinearGradient(
+                    gradient: Gradient(colors: [
+                        Color.nearBackgroundStart,
+                        Color.nearBackgroundEnd
+                    ]),
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+             }
+        )
+        .cornerRadius(16)
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(
                     LinearGradient(
                         gradient: Gradient(colors: [
-                            .nearBackgroundStart,
-                            .nearBackgroundEnd
+                            Color.white.opacity(0.8),
+                            Color.white.opacity(0.2)
                         ]),
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
-                    )
-
-                    // 装饰性渐变
-                    VStack {
-                        HStack {
-                            Circle()
-                                .fill(
-                                    LinearGradient(
-                                        gradient: Gradient(colors: [
-                                            Color.nearPrimary.opacity(0.1),
-                                            Color.nearSecondary.opacity(0.05)
-                                        ]),
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    )
-                                )
-                                .frame(width: 120, height: 120)
-                                .blur(radius: 40)
-                            Spacer()
-                        }
-                        Spacer()
-                        HStack {
-                            Spacer()
-                            Circle()
-                                .fill(
-                                    LinearGradient(
-                                        gradient: Gradient(colors: [
-                                            Color(hex: "#EC4899").opacity(0.08),
-                                            Color(hex: "#F59E0B").opacity(0.04)
-                                        ]),
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    )
-                                )
-                                .frame(width: 80, height: 80)
-                                .blur(radius: 30)
-                        }
-                    }
-                }
-            )
-            .cornerRadius(16)
-            .overlay(
-                RoundedRectangle(cornerRadius: 16)
-                    .stroke(
-                        LinearGradient(
-                            gradient: Gradient(colors: [
-                                Color.white.opacity(0.8),
-                                Color.white.opacity(0.2)
-                            ]),
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 1
-                    )
-            )
-
-            // FAB Layer
-            FabButton(action: {
-                showingAddSheet = true
-            })
-            .padding(.bottom, 24)
-            .padding(.trailing, 24)
-            .scaleEffect(showingAddSheet ? 0.0 : 1.0)
-            .animation(.spring(response: 0.4, dampingFraction: 0.6), value: showingAddSheet)
-        }
-        .frame(width: 380, height: 600) // Explicit frame for the window content
-        .sheet(isPresented: $showingAddSheet) {
-            AddCountdownView()
-                .environmentObject(countdownManager)
-                //.presentationDetents([.height(400)]) // Optional: Make it smaller
-        }
-        .sheet(isPresented: $showingSettingsSheet) {
-            SettingsView()
-                .environmentObject(countdownManager)
-        }
-        
-        // Modal for AI Parser if needed, currently AddCountdownView handles it?
-        // AddCountdownView structure needs checking if it uses AI parser inside. 
+                    ),
+                    lineWidth: 1
+                )
+        )
     }
 
     private var activeCountdownsView: some View {
-        ScrollView {
+        ScrollView(showsIndicators: false) { // No scrollbar
             VStack(spacing: 16) {
-                if countdownManager.activeCountdowns.isEmpty {
+                // Pinned Item Section
+                if let pinned = countdownManager.pinnedCountdown {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Image(systemName: "pin.fill")
+                                .font(.system(size: 10))
+                                .foregroundColor(.nearPrimary)
+                            Text("置顶")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundColor(.nearSecondary)
+                        }
+                        .padding(.leading, 4)
+                        
+                        CountdownCardView(countdown: pinned)
+                    }
+                    .padding(.bottom, 12)
+                }
+
+                if countdownManager.activeCountdowns.isEmpty && countdownManager.pinnedCountdown == nil {
                     EmptyStateView(title: "暂无倒计时", subtitle: "点击右下角 + 添加")
                         .padding(.top, 100)
-                } else {
+                } else if !countdownManager.activeCountdowns.isEmpty {
                     ForEach(countdownManager.activeCountdowns) { countdown in
                         CountdownCardView(countdown: countdown)
                             .onDrag {
                                 let idString = countdown.uuidString
                                 return NSItemProvider(object: idString as NSString)
                             }
-                            .onDrop(of: [.data], delegate: DragDropDelegate(sourceIndex: countdownManager.activeCountdowns.firstIndex(where: { $0.id == countdown.id }) ?? 0, countdownManager: countdownManager))
+                            .onDrop(of: [.text], delegate: DragDropDelegate(destination: countdown, countdownManager: countdownManager))
                     }
-                    .onMove(perform: moveActiveCountdowns)
+                }
+                
+                // Drop zone at bottom for appending
+                if !countdownManager.activeCountdowns.isEmpty {
+                    Color.clear
+                        .frame(height: 50)
+                        .contentShape(Rectangle())
+                        .onDrop(of: [.text], delegate: DragDropDelegate(destination: nil, countdownManager: countdownManager))
                 }
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 80) // Space for FAB
             .padding(.top, 8)
         }
-        .animation(.easeInOut(duration: 0.3), value: countdownManager.activeCountdowns.count)
     }
 
     private var completedCountdownsView: some View {
-        ScrollView {
+        ScrollView(showsIndicators: false) { // No scrollbar
             VStack(spacing: 16) {
                 if countdownManager.completedCountdowns.isEmpty {
                     EmptyStateView(title: "暂无已结束的倒计时", subtitle: "完成的倒计时会显示在这里")
@@ -150,28 +171,50 @@ struct ContentView: View {
                 } else {
                     ForEach(countdownManager.completedCountdowns) { countdown in
                         CountdownCardView(countdown: countdown)
-                            .onDrag {
-                                let idString = countdown.uuidString
-                                return NSItemProvider(object: idString as NSString)
-                            }
-                            .onDrop(of: [.data], delegate: DragDropDelegate(sourceIndex: countdownManager.completedCountdowns.firstIndex(where: { $0.id == countdown.id }) ?? 0, countdownManager: countdownManager))
+                            .opacity(0.7)
                     }
-                    .onMove(perform: moveCompletedCountdowns)
                 }
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 80) // Space for FAB
             .padding(.top, 8)
         }
-        .animation(.easeInOut(duration: 0.3), value: countdownManager.completedCountdowns.count)
     }
+}
 
-    // 拖拽排序功能
-    private func moveActiveCountdowns(from source: IndexSet, to destination: Int) {
-        countdownManager.moveActiveCountdowns(from: source, to: destination)
-    }
-
-    private func moveCompletedCountdowns(from source: IndexSet, to destination: Int) {
-        countdownManager.moveCompletedCountdowns(from: source, to: destination)
+// Collapsible FAB Component
+struct CollapsibleFab: View {
+    let action: () -> Void
+    @State private var isHovering = false
+    
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: isHovering ? 8 : 0) {
+                Image(systemName: "plus")
+                    .font(.system(size: 20, weight: .bold))
+                
+                if isHovering {
+                    Text("新建")
+                        .font(.system(size: 14, weight: .bold))
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                }
+            }
+            .foregroundColor(.white)
+            .padding(.vertical, isHovering ? 12 : 8)
+            .padding(.horizontal, isHovering ? 20 : 8)
+            .background(
+                LinearGradient(gradient: Gradient(colors: [.nearPrimary, .nearHoverBlueBg]), startPoint: .topLeading, endPoint: .bottomTrailing)
+            )
+            .clipShape(Capsule())
+            .shadow(color: .nearPrimary.opacity(0.4), radius: 8, x: 0, y: 4)
+            .scaleEffect(isHovering ? 1.0 : 0.8) // Shrink by default
+            .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isHovering)
+        }
+        .buttonStyle(.plain)
+        .onHover { hover in
+            withAnimation(.spring()) {
+                isHovering = hover
+            }
+        }
     }
 }

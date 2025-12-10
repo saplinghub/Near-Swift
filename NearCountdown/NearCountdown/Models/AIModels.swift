@@ -4,12 +4,14 @@ struct AIConfig: Codable {
     var baseURL: String
     var apiKey: String
     var model: String
+    var systemPrompt: String? // Added custom system prompt
 
     static func createDefault() -> AIConfig {
         AIConfig(
-            baseURL: "https://api.openai.com/v1",
+            baseURL: "https://x666.me/v1",
             apiKey: "",
-            model: "gpt-3.5-turbo"
+            model: "gpt-4.1-mini",
+            systemPrompt: nil // Default to nil, will use built-in default if nil
         )
     }
 
@@ -18,30 +20,59 @@ struct AIConfig: Codable {
     }
 }
 
-struct AIResponse: Codable {
+// Wrapper for OpenAI API Response
+struct OpenAIChatResponse: Codable {
+    struct Choice: Codable {
+        struct Message: Codable {
+            let content: String
+        }
+        let message: Message
+    }
+    let choices: [Choice]
+}
+
+// The actual content we expect from the AI
+struct AIContentResponse: Codable {
     let name: String
     let date: String
     let startDate: String?
+    let icon: String? // Added icon suggestion
 
     func toCountdownEvent() -> CountdownEvent? {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
-
-        guard let targetDate = formatter.date(from: date) else { return nil }
+        // Also support ISO format with time if AI provides it
+        // For simplicity, sticking to yyyy-MM-dd or yyyy-MM-dd HH:mm 
+        
+        // Intelligent date parsing (simple version)
+        var targetDate: Date? = formatter.date(from: date)
+        if targetDate == nil {
+            formatter.dateFormat = "yyyy-MM-dd HH:mm"
+            targetDate = formatter.date(from: date)
+        }
+        
+        guard let finalTargetDate = targetDate else { return nil }
 
         let startDateValue: Date
+        formatter.dateFormat = "yyyy-MM-dd" // Reset
         if let startDateStr = startDate, let parsedStartDate = formatter.date(from: startDateStr) {
             startDateValue = parsedStartDate
         } else {
             startDateValue = Date()
+        }
+        
+        // Icon parsing
+        var iconType: IconType = .star
+        if let iconName = icon, let matched = IconType(rawValue: iconName.lowercased()) {
+            iconType = matched
         }
 
         return CountdownEvent(
             id: UUID(),
             name: name,
             startDate: startDateValue,
-            targetDate: targetDate,
-            icon: .rocket,
+            targetDate: finalTargetDate,
+            icon: iconType,
             isPinned: false,
             order: 0
         )

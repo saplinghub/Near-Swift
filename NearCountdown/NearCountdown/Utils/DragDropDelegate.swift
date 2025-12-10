@@ -2,35 +2,40 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct DragDropDelegate: DropDelegate {
-    let sourceIndex: Int
+    let destination: CountdownEvent?
     let countdownManager: CountdownManager
 
     func validateDrop(info: DropInfo) -> Bool {
-        guard let item = info.itemProviders(for: [.data]).first else { return false }
-        return item.canLoadObject(ofClass: String.self)
+        return info.hasItemsConforming(to: [.text])
     }
 
     func dropEntered(info: DropInfo) {
-        // 可以在这里添加视觉反馈
+        // Visual feedback if needed
     }
 
     func performDrop(info: DropInfo) -> Bool {
-        guard let item = info.itemProviders(for: [.data]).first else {
+        guard let item = info.itemProviders(for: [.text]).first else {
             return false
         }
 
-        // Fix: Use loadDataRepresentation(for:completionHandler:) or loadObject(ofClass:completionHandler:)
-        // correctly without blocking the main thread.
-        
-        item.loadObject(ofClass: String.self) { (data, error) in
-            // Handle the optional data safely
-            if let idString = data as? String,
-               let targetId = UUID(uuidString: idString) {
+        _ = item.loadObject(ofClass: String.self) { (data, error) in
+            if let idString = data,
+               let sourceId = UUID(uuidString: idString) {
                 
-                // Perform the UI update on the main thread
                 DispatchQueue.main.async {
-                    print("Dropping item: \(targetId) to index: \(self.sourceIndex)")
-                    self.countdownManager.moveCountdown(from: self.sourceIndex, to: targetId)
+                    if let dest = self.destination {
+                         print("Dropping source: \(sourceId) on destination: \(dest.id)")
+                         if sourceId != dest.id {
+                             withAnimation {
+                                 self.countdownManager.moveCountdown(sourceId: sourceId, destinationId: dest.id)
+                             }
+                         }
+                    } else {
+                        print("Dropping source: \(sourceId) to end of list")
+                        withAnimation {
+                            self.countdownManager.moveCountdownToEnd(sourceId: sourceId)
+                        }
+                    }
                 }
             } else {
                 print("Failed to load drop item: \(String(describing: error))")

@@ -18,13 +18,13 @@ struct HeaderView: View {
             HStack(spacing: 8) {
                 // Custom Tab Switcher
                 HStack(spacing: 0) {
-                    TabButton(title: "主页", isSelected: selectedTab == 0) {
+                    TabButton(title: "进行中", isSelected: selectedTab == 0) {
                         withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                             selectedTab = 0
                         }
                     }
                     
-                    TabButton(title: "系统", isSelected: selectedTab == 1) { // Renamed to "系统" to match image, originally "已结束"
+                    TabButton(title: "已结束", isSelected: selectedTab == 1) {
                         withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                             selectedTab = 1
                         }
@@ -72,9 +72,10 @@ struct TabButton: View {
         Button(action: action) {
             Text(title)
                 .font(.system(size: 13, weight: isSelected ? .bold : .medium))
+                .fixedSize(horizontal: true, vertical: false) // Prevent truncation
                 .foregroundColor(isSelected ? .nearPrimary : .nearTextSecondary)
                 .frame(height: 28)
-                .padding(.horizontal, 16)
+                .padding(.horizontal, 24)
                 .background(
                     RoundedRectangle(cornerRadius: 6)
                         .fill(isSelected ? Color.nearHoverBlueBg : Color.clear) // Light blue bg for selected
