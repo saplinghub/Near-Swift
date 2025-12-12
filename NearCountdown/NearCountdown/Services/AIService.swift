@@ -197,15 +197,15 @@ class AIService: ObservableObject {
             request.setValue("Bearer \(self.config.apiKey)", forHTTPHeaderField: "Authorization")
             
             let systemPrompt = """
-            你是一个专业的黄历和运势助手。今天是 \(dateString)。
-            请返回通过JSON格式返回今天的黄历信息，针对程序员或创造者群体。
+            你是一个专业的中国传统黄历和运势助手。今天是 \(dateString)。
+            请返回今天的黄历信息，内容要符合中国传统黄历习惯。
             JSON格式：
             {
                 "date": "\(dateString)",
-                "lunarDate": "xx月xx",
-                "yi": "宜做什么 (简短3-4项)",
-                "ji": "忌做什么 (简短3-4项)",
-                "fortune": "今日运势/寄语 (一句话，幽默或励志)"
+                "lunarDate": "农历xx月xx (如：腊月初八)",
+                "yi": "宜：嫁娶、出行、祈福、开业等 (4-5项，用顿号分隔)",
+                "ji": "忌：动土、安葬、破土、诸事不宜等 (4-5项，用顿号分隔)",
+                "fortune": "今日运势详解 (2-3句话，包含事业、感情或健康方面的建议，语气积极温暖)"
             }
             不要包含markdown格式，只返回纯JSON。
             """

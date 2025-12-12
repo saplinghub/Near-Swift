@@ -51,7 +51,42 @@ class StatusBarManager: NSObject, NSWindowDelegate {
             button.action = #selector(toggleWindow)
             button.target = self
             button.imagePosition = .imageLeft
+            
+            // Enable right-click menu
+            button.sendAction(on: [.leftMouseDown, .rightMouseUp])
         }
+        
+        // Setup right-click menu
+        let menu = NSMenu()
+        menu.addItem(NSMenuItem(title: "打开主窗口", action: #selector(showWindow), keyEquivalent: ""))
+        menu.addItem(NSMenuItem.separator())
+        menu.addItem(NSMenuItem(title: "退出 Near", action: #selector(quitApp), keyEquivalent: "q"))
+        statusItem.menu = nil // Will show on right-click only
+        self.statusMenu = menu
+    }
+    
+    private var statusMenu: NSMenu?
+    
+    @objc func toggleWindow(_ sender: Any?) {
+        // Check if it's a right-click
+        if let event = NSApp.currentEvent, event.type == .rightMouseUp {
+            statusItem.menu = statusMenu
+            statusItem.button?.performClick(nil)
+            // Reset menu so left-click works
+            DispatchQueue.main.async { self.statusItem.menu = nil }
+            return
+        }
+        
+        // Left-click behavior
+        if isWindowVisible {
+            hideWindow()
+        } else {
+            showWindow()
+        }
+    }
+    
+    @objc func quitApp() {
+        NSApp.terminate(nil)
     }
     
     private func loadFanFrames() {
@@ -202,15 +237,9 @@ class StatusBarManager: NSObject, NSWindowDelegate {
         }
     }
 
-    @objc func toggleWindow() {
-        if isWindowVisible {
-            hideWindow()
-        } else {
-            showWindow()
-        }
-    }
 
-    func showWindow() {
+
+    @objc func showWindow() {
         let windowWidth: CGFloat = 380
         let windowHeight: CGFloat = 600
 

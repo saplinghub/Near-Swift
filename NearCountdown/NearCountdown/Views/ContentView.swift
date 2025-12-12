@@ -37,7 +37,7 @@ struct ContentView: View {
                     } else if selectedBottomTab == 1 {
                          // Tab 1: Intelligent Calendar
                          VStack(spacing: 0) {
-                             PageHeader(title: "日历 & 黄历", showingSettingsSheet: $showingSettingsView)
+                             PageHeader(title: "日历", showingSettingsSheet: $showingSettingsView)
                              CalendarView()
                          }
                          .transition(.opacity)
@@ -74,8 +74,8 @@ struct ContentView: View {
             .blur(radius: (showingAddView || showingSettingsView) ? 10 : 0) // Blur effect when overlay is active
             .disabled(showingAddView || showingSettingsView)
             
-            // FAB (Floating Action Button) - Only show when no overlay
-            if !showingAddView && !showingSettingsView {
+            // FAB (Floating Action Button) - Only show on Tab 0 (Home) when no overlay
+            if selectedBottomTab == 0 && !showingAddView && !showingSettingsView {
                 VStack {
                     Spacer()
                     HStack {
@@ -85,11 +85,11 @@ struct ContentView: View {
                                 showingAddView = true
                             }
                         })
-
                         .padding(.trailing, 20)
-                        .padding(.bottom, 40) // Adjusted for minimal bar
+                        .padding(.bottom, 60) // Raised above bottom bar
                     }
                 }
+                .zIndex(2) // Above bottom bar
                 .transition(.scale)
             }
             
