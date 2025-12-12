@@ -2,7 +2,7 @@ import Cocoa
 import SwiftUI
 import Combine
 
-class StatusBarManager: NSObject, NSWindowDelegate {
+class StatusBarManager: NSObject, NSWindowDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem
     private var window: NSWindow?
     private var countdownManager: CountdownManager
@@ -58,21 +58,41 @@ class StatusBarManager: NSObject, NSWindowDelegate {
         
         // Setup right-click menu
         let menu = NSMenu()
-        menu.addItem(NSMenuItem(title: "打开主窗口", action: #selector(showWindow), keyEquivalent: ""))
+        menu.delegate = self
+        
+        let openItem = NSMenuItem(title: "打开主窗口", action: #selector(showWindow), keyEquivalent: "")
+        openItem.tag = 1 // Tag for dynamic enable
+        menu.addItem(openItem)
+        
+        let hideItem = NSMenuItem(title: "隐藏主窗口", action: #selector(hideWindow), keyEquivalent: "")
+        hideItem.tag = 2 // Tag for dynamic enable
+        menu.addItem(hideItem)
+        
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "退出 Near", action: #selector(quitApp), keyEquivalent: "q"))
-        statusItem.menu = nil // Will show on right-click only
+        statusItem.menu = nil
         self.statusMenu = menu
     }
     
     private var statusMenu: NSMenu?
+    
+    // MARK: - NSMenuDelegate
+    func menuWillOpen(_ menu: NSMenu) {
+        // Dynamically enable/disable based on window state
+        for item in menu.items {
+            if item.tag == 1 { // Open window
+                item.isEnabled = !isWindowVisible
+            } else if item.tag == 2 { // Hide window
+                item.isEnabled = isWindowVisible
+            }
+        }
+    }
     
     @objc func toggleWindow(_ sender: Any?) {
         // Check if it's a right-click
         if let event = NSApp.currentEvent, event.type == .rightMouseUp {
             statusItem.menu = statusMenu
             statusItem.button?.performClick(nil)
-            // Reset menu so left-click works
             DispatchQueue.main.async { self.statusItem.menu = nil }
             return
         }
@@ -278,7 +298,7 @@ class StatusBarManager: NSObject, NSWindowDelegate {
         setupEventMonitor()
     }
 
-    func hideWindow() {
+    @objc func hideWindow() {
         window?.orderOut(nil)
         isWindowVisible = false
         stopEventMonitor()
