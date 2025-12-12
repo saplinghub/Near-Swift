@@ -24,11 +24,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // to avoid cascading changes unless needed.
         let countdownManager = CountdownManager() 
         let aiService = AIService(storageManager: storageManager)
+        let systemMonitor = SystemMonitor()
 
         statusBarManager = StatusBarManager(
             countdownManager: countdownManager,
             aiService: aiService,
-            storageManager: storageManager
+            storageManager: storageManager,
+            systemMonitor: systemMonitor
         )
 
         print("AppDelegate setup completed")

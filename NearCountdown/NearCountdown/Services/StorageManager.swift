@@ -44,6 +44,11 @@ class StorageManager: ObservableObject {
             print("Error saving countdowns: \(error)")
         }
     }
+    
+    func syncAll(_ countdowns: [CountdownEvent]) {
+        self.countdowns = countdowns
+        saveCountdowns()
+    }
 
     func saveAIConfig() {
         do {

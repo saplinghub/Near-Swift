@@ -169,4 +169,102 @@ class AIService: ObservableObject {
         }
         .eraseToAnyPublisher()
     }
+    
+    // MARK: - Almanac (Huangli)
+    func fetchAlmanac(date: Date) -> AnyPublisher<AlmanacResponse, Error> {
+        // Cache Key
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        let dateString = formatter.string(from: date)
+        
+        // Return cached if available (avoiding extra AI calls)
+        // Note: For now, I'll rely on the caller to handle caching or just always fetch if explicit.
+        // User asked for "Refresh" button, so we should support fetch.
+        
+        isLoading = true
+        errorMessage = nil
+        
+        return Future<AlmanacResponse, Error> { promise in
+            guard let url = URL(string: "\(self.config.baseURL)/chat/completions") else {
+                self.isLoading = false
+                promise(.failure(NSError(domain: "Invalid URL", code: 0)))
+                return
+            }
+            
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue("Bearer \(self.config.apiKey)", forHTTPHeaderField: "Authorization")
+            
+            let systemPrompt = """
+            你是一个专业的黄历和运势助手。今天是 \(dateString)。
+            请返回通过JSON格式返回今天的黄历信息，针对程序员或创造者群体。
+            JSON格式：
+            {
+                "date": "\(dateString)",
+                "lunarDate": "xx月xx",
+                "yi": "宜做什么 (简短3-4项)",
+                "ji": "忌做什么 (简短3-4项)",
+                "fortune": "今日运势/寄语 (一句话，幽默或励志)"
+            }
+            不要包含markdown格式，只返回纯JSON。
+            """
+            
+            let body: [String: Any] = [
+                "model": self.config.model,
+                "messages": [
+                    ["role": "system", "content": systemPrompt],
+                    ["role": "user", "content": "请生成今日黄历"]
+                ],
+                "temperature": 0.7 // Slightly creative for fortune
+            ]
+            
+            do {
+                request.httpBody = try JSONSerialization.data(withJSONObject: body)
+            } catch {
+                self.isLoading = false
+                promise(.failure(error))
+                return
+            }
+            
+            URLSession.shared.dataTaskPublisher(for: request)
+                .tryMap { data, response -> Data in
+                    guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+                        throw URLError(.badServerResponse)
+                    }
+                    return data
+                }
+                .decode(type: OpenAIChatResponse.self, decoder: JSONDecoder())
+                .tryMap { response -> AlmanacResponse in
+                    guard let content = response.choices.first?.message.content else {
+                         throw NSError(domain: "AI Error", code: -1)
+                    }
+                    var cleanContent = content
+                    if cleanContent.contains("```json") {
+                        cleanContent = cleanContent.replacingOccurrences(of: "```json", with: "").replacingOccurrences(of: "```", with: "")
+                    }
+                    
+                    guard let data = cleanContent.data(using: .utf8) else {
+                        throw NSError(domain: "AI Error", code: -2)
+                    }
+                    
+                    return try JSONDecoder().decode(AlmanacResponse.self, from: data)
+                }
+                .receive(on: DispatchQueue.main)
+                .sink(
+                    receiveCompletion: { completion in
+                        self.isLoading = false
+                        if case .failure(let error) = completion {
+                            self.errorMessage = "黄历获取失败: \(error.localizedDescription)"
+                            promise(.failure(error))
+                        }
+                    },
+                    receiveValue: { almanac in
+                        promise(.success(almanac))
+                    }
+                )
+                .store(in: &self.cancellables)
+        }
+        .eraseToAnyPublisher()
+    }
 }

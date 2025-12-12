@@ -5,31 +5,72 @@ struct ContentView: View {
     // Add environment objects for others if needed directly, but usually they cascade
     @EnvironmentObject var aiService: AIService
     @EnvironmentObject var storageManager: StorageManager
+    @EnvironmentObject var systemMonitor: SystemMonitor
     
     @State private var showingAddView = false
     @State private var showingSettingsView = false
-    @State private var selectedTab = 0
+    @State private var selectedTopTab = 0 // "In Progress" vs "Completed"
+    @State private var selectedBottomTab = 0 // "Events", "Calendar", etc.
 
     var body: some View {
         ZStack {
             // Main Content Layer
-            VStack(spacing: 0) {
-                // Header linked to our state
-                HeaderView(showingSettingsSheet: $showingSettingsView, selectedTab: $selectedTab)
-                
-                // Content
-                VStack(spacing: 0) {
-                    // Main List Area
-                    Group {
-                        if selectedTab == 0 {
-                            activeCountdownsView
-                        } else {
-                            completedCountdownsView
+                // Content Area with Tab Switching
+                ZStack {
+                    if selectedBottomTab == 0 {
+                        // Tab 0: Events (Original Home)
+                        VStack(spacing: 0) {
+                            // Header linked to our state (Top Tabs)
+                            HeaderView(showingSettingsSheet: $showingSettingsView, selectedTab: $selectedTopTab)
+                            
+                            // Content
+                            Group {
+                                if selectedTopTab == 0 {
+                                    activeCountdownsView
+                                } else {
+                                    completedCountdownsView
+                                }
+                            }
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                         }
+                        .transition(.opacity)
+                    } else if selectedBottomTab == 1 {
+                         // Tab 1: Intelligent Calendar
+                         VStack(spacing: 0) {
+                             PageHeader(title: "日历 & 黄历", showingSettingsSheet: $showingSettingsView)
+                             CalendarView()
+                         }
+                         .transition(.opacity)
+                    } else if selectedBottomTab == 2 {
+                         // Tab 2: System View
+                         VStack(spacing: 0) {
+                             PageHeader(title: "系统状态", showingSettingsSheet: $showingSettingsView)
+                             SystemView()
+                         }
+                         .transition(.opacity)
+                    } else if selectedBottomTab == 3 {
+                         // Tab 3: Mine/Settings Placeholder
+                         VStack(spacing: 0) {
+                             PageHeader(title: "我的", showingSettingsSheet: $showingSettingsView)
+                             
+                             VStack {
+                                 Image(systemName: "person.crop.circle")
+                                    .font(.system(size: 50))
+                                    .foregroundColor(.nearPrimary.opacity(0.3))
+                                 Text("个人中心")
+                                    .foregroundColor(.secondary)
+                                 
+                                 Button("打开设置") {
+                                     showingSettingsView = true
+                                 }
+                                 .padding(.top, 20)
+                             }
+                             .frame(maxWidth: .infinity, maxHeight: .infinity)
+                         }
+                         .transition(.opacity)
                     }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-            }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             .blur(radius: (showingAddView || showingSettingsView) ? 10 : 0) // Blur effect when overlay is active
             .disabled(showingAddView || showingSettingsView)
             
@@ -44,11 +85,23 @@ struct ContentView: View {
                                 showingAddView = true
                             }
                         })
+
                         .padding(.trailing, 20)
-                        .padding(.bottom, 20)
+                        .padding(.bottom, 40) // Adjusted for minimal bar
                     }
                 }
                 .transition(.scale)
+            }
+            
+            // Bottom Tab Bar - Always visible unless overlay
+            if !showingAddView && !showingSettingsView {
+                VStack {
+                    Spacer()
+                    BottomTabBar(selectedTab: $selectedBottomTab)
+                }
+                .transition(.move(edge: .bottom))
+                .zIndex(1) // Above content, below FAB? Actually FAB should generally be above. 
+                // Z-Index: Content=0, BottomBar=1, FAB= (VStack above is implicit), Overlay=2/3
             }
             
             // Overlays
@@ -157,7 +210,7 @@ struct ContentView: View {
                 }
             }
             .padding(.horizontal, 16)
-            .padding(.bottom, 80) // Space for FAB
+            .padding(.bottom, 40) // Adjusted for minimal bar
             .padding(.top, 8)
         }
     }
@@ -176,7 +229,7 @@ struct ContentView: View {
                 }
             }
             .padding(.horizontal, 16)
-            .padding(.bottom, 80) // Space for FAB
+            .padding(.bottom, 40) // Adjusted for minimal bar
             .padding(.top, 8)
         }
     }

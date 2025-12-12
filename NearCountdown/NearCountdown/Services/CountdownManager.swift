@@ -103,7 +103,7 @@ class CountdownManager: ObservableObject {
                 countdowns[index].isPinned = true
             }
             
-            storageManager.saveCountdowns()
+            storageManager.syncAll(countdowns)
             updateFilteredCountdowns()
         }
     }

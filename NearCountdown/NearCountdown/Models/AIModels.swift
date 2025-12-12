@@ -78,3 +78,12 @@ struct AIContentResponse: Codable {
         )
     }
 }
+
+// Almanac Response from AI
+struct AlmanacResponse: Codable {
+    let date: String
+    let lunarDate: String
+    let yi: String // Suitable
+    let ji: String // Unsuitable
+    let fortune: String // Daily Fortune
+}
