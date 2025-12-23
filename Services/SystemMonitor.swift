@@ -127,7 +127,7 @@ class SystemMonitor: ObservableObject {
     
     // MARK: - Thermal State & Temperature (Estimated)
     private func updateThermalState() {
-        var baseTemp: Double = 35.0
+        let baseTemp: Double = 35.0
         var thermalOffset: Double = 0.0
         
         // ProcessInfo thermal state is a rough proxy
@@ -149,11 +149,15 @@ class SystemMonitor: ObservableObject {
             thermalOffset = 0.0
         }
         
-        // Algorithm: Base + (CPU Load * 50) + ThermalOffset + Random Jitter
+        // Algorithm: Base + (CPU Load * 50) + ThermalOffset
+        // REMOVED: Artificial jitter that caused constant UI updates
         let loadFactor = cpuUsage * 50.0
-        let jitter = Double.random(in: -0.5...0.5)
         
-        let estimatedTemp = baseTemp + loadFactor + thermalOffset + jitter
-        self.cpuTemperature = estimatedTemp
+        let estimatedTemp = baseTemp + loadFactor + thermalOffset
+        
+        // Damping: Only update if changed by > 1.0 degree to prevent micro-animations
+        if abs(self.cpuTemperature - estimatedTemp) > 1.0 {
+             self.cpuTemperature = estimatedTemp
+        }
     }
 }

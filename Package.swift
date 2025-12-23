@@ -19,7 +19,8 @@ let package = Package(
         .executableTarget(
             name: "NearCountdown",
             dependencies: [],
-            path: "NearCountdown",
+            path: ".",
+            exclude: ["build-dmg.sh", "dist", "README.md", "Info.plist"],
             resources: [
                 .process("Resources")
             ]

@@ -28,8 +28,8 @@ mkdir -p "$APP_BUNDLE/Contents/Resources"
 cp "$BUILD_DIR/NearCountdown" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
 
 # 4. Copy resources
-if [ -d "NearCountdown/Resources" ]; then
-    cp -r NearCountdown/Resources/* "$APP_BUNDLE/Contents/Resources/"
+if [ -d "Resources" ]; then
+    cp -r Resources/* "$APP_BUNDLE/Contents/Resources/"
 fi
 
 # 5. Create Info.plist
@@ -53,7 +53,7 @@ cat > "$APP_BUNDLE/Contents/Info.plist" << EOF
     <key>CFBundleExecutable</key>
     <string>$APP_NAME</string>
     <key>CFBundleIconFile</key>
-    <string>AppIcon</string>
+    <string>AppIcon.icns</string>
     <key>LSMinimumSystemVersion</key>
     <string>12.0</string>
     <key>LSUIElement</key>

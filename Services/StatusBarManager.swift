@@ -62,15 +62,20 @@ class StatusBarManager: NSObject, NSWindowDelegate, NSMenuDelegate {
         
         let openItem = NSMenuItem(title: "打开主窗口", action: #selector(showWindow), keyEquivalent: "")
         openItem.tag = 1 // Tag for dynamic enable
+        openItem.target = self
         menu.addItem(openItem)
         
         let hideItem = NSMenuItem(title: "隐藏主窗口", action: #selector(hideWindow), keyEquivalent: "")
         hideItem.tag = 2 // Tag for dynamic enable
+        hideItem.target = self
         menu.addItem(hideItem)
         
         menu.addItem(NSMenuItem.separator())
-        menu.addItem(NSMenuItem(title: "退出 Near", action: #selector(quitApp), keyEquivalent: "q"))
-        statusItem.menu = nil
+        let quitItem = NSMenuItem(title: "退出 Near", action: #selector(quitApp), keyEquivalent: "q")
+        quitItem.target = self
+        menu.addItem(quitItem)
+        
+        // DO NOT assign to statusItem.menu (that kills left-click actions)
         self.statusMenu = menu
     }
     
@@ -89,11 +94,11 @@ class StatusBarManager: NSObject, NSWindowDelegate, NSMenuDelegate {
     }
     
     @objc func toggleWindow(_ sender: Any?) {
-        // Check if it's a right-click
-        if let event = NSApp.currentEvent, event.type == .rightMouseUp {
-            statusItem.menu = statusMenu
-            statusItem.button?.performClick(nil)
-            DispatchQueue.main.async { self.statusItem.menu = nil }
+        // Check for right-click via NSApp.currentEvent
+        if let event = NSApp.currentEvent, event.type == .rightMouseDown || event.type == .rightMouseUp {
+            if let menu = statusMenu, let button = statusItem.button {
+                menu.popUp(positioning: nil, at: NSPoint(x: 0, y: button.bounds.height + 5), in: button)
+            }
             return
         }
         
@@ -204,37 +209,36 @@ class StatusBarManager: NSObject, NSWindowDelegate, NSMenuDelegate {
             }
             .store(in: &cancellables)
             
-        // Observe System CPU Temperature (not Usage)
-        systemMonitor.$cpuTemperature
+        // Observe System CPU Usage (Changed from Temperature)
+        systemMonitor.$cpuUsage
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] temp in
-                self?.updateFanSpeed(temperature: temp)
+            .sink { [weak self] usage in
+                self?.updateFanSpeed(usage: usage)
             }
             .store(in: &cancellables)
     }
     
-    private func updateFanSpeed(temperature: Double) {
-        // Inverse Animation Logic (User Request):
-        // "Standard is 30fps. If > 60°C -> 10fps. If > 80°C -> 5fps."
-        // Base Duration = 1.0s (32 frames). 
-        // Speed 1.0 = ~30 FPS.
-        // Speed 0.33 = ~10 FPS.
-        // Speed 0.16 = ~5 FPS.
+    private func updateFanSpeed(usage: Double) {
+        // CPU-Based Logic (User Request):
+        // Proportional: Higher CPU = Faster Spin
+        // Usage is 0.0 to 1.0
         
         guard let layer = iconLayer else { return }
         
         let targetSpeed: Float
         
-        if temperature >= 80.0 {
-            targetSpeed = 0.15 // ~5 FPS
-        } else if temperature >= 60.0 {
-            targetSpeed = 0.31 // ~10 FPS
+        if usage >= 0.8 {
+            targetSpeed = 3.0 // Hyper Speed
+        } else if usage >= 0.5 {
+            targetSpeed = 2.0 // Fast
+        } else if usage >= 0.1 {
+            targetSpeed = 1.0 // Normal (30 FPS)
         } else {
-            targetSpeed = 0.93 // ~30 FPS
+            targetSpeed = 0.2 // Idle / Very Slow
         }
         
         // Output speed for debugging if needed
-        // print("Temp: \(temperature) -> Speed: \(targetSpeed)")
+        // print("CPU: \(usage) -> Speed: \(targetSpeed)")
         
         // Smooth update check
         if abs(layer.speed - targetSpeed) > 0.05 {
