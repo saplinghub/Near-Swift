@@ -10,19 +10,27 @@ struct WeatherHeaderView: View {
                 ProgressView().scaleEffect(isCompact ? 0.5 : 0.7)
             } else if let weather = weatherService.weather {
                 if isCompact {
-                    // Compact Mode for Calendars
-                    HStack(spacing: 4) {
+                    // Refined Pill Mode for Calendars
+                    HStack(spacing: 6) {
                         Image(systemName: weatherIcon(code: weather.current.icon))
                             .font(.system(size: 14))
+                            .symbolRenderingMode(.hierarchical)
                             .foregroundColor(.nearPrimary)
-                        Text("\(weather.current.temp)°")
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundColor(.nearTextPrimary)
+                        
+                        HStack(spacing: 2) {
+                            Text("\(weather.current.temp)°")
+                                .font(.system(size: 14, weight: .bold))
+                            
+                            Text(weather.current.text)
+                                .font(.system(size: 12))
+                                .foregroundColor(.nearTextSecondary)
+                        }
                     }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Color.white.opacity(0.6))
-                    .cornerRadius(20)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(.ultraThinMaterial)
+                    .clipShape(Capsule())
+                    .shadow(color: Color.black.opacity(0.04), radius: 5, x: 0, y: 2)
                 } else {
                     // Standard Mode - Enhanced Aesthetics
                     HStack(spacing: 12) {
@@ -118,15 +126,8 @@ struct WeatherHeaderView: View {
                         }
                     }
                     .padding(16)
-                    .background(
-                        RoundedRectangle(cornerRadius: 16)
-                            .fill(Color.white.opacity(0.5))
-                            .shadow(color: Color.black.opacity(0.03), radius: 10, x: 0, y: 4)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 16)
-                            .stroke(Color.white.opacity(0.5), lineWidth: 1)
-                    )
+                    .background(.ultraThinMaterial.opacity(0.2)) // Unified glass effect
+                    .cornerRadius(20)
                 }
             } else {
                 Text(weatherService.errorMessage ?? "未配置")

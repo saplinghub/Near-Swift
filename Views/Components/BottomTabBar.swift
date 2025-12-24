@@ -72,8 +72,8 @@ struct BottomTabBar: View {
             // But when !isHovering, we still need the Trigger Zone to work. Trigger Zone is separate in ZStack.
             // So this modifier applies to the VStack (Visuals).
         }
-        .frame(height: 90, alignment: .bottom) // Fixed height trigger container
-        .background(Color.black.opacity(0.001)) // Invisible fill to capture hover everywhere in frame
+        .frame(height: 40, alignment: .bottom) // Reduced height from 90 to 40
+        .background(Color.black.opacity(0.001))
         .onHover { hover in
             withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                 isHovering = hover

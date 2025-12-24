@@ -5,7 +5,7 @@ struct CalendarView: View {
     @EnvironmentObject var aiService: AIService
     @EnvironmentObject var countdownManager: CountdownManager
     @EnvironmentObject var weatherService: WeatherService
-    @State private var viewMode: Int = 0
+    @AppStorage("calendarViewMode") private var viewMode: Int = 0
     @State private var almanac: AlmanacResponse?
     @State private var currentDate = Date()
     @State private var selectedDate: Date? = nil
@@ -57,27 +57,20 @@ struct CalendarView: View {
     ]
     
     var body: some View {
-            ZStack(alignment: .topTrailing) {
-                VStack(spacing: 12) {
-                    NearTabPicker(items: ["今日黄历", "月历", "天气"], selection: $viewMode)
-                        .padding(.horizontal, 40)
-                        .padding(.top, 4)
-                    
-                    if viewMode == 0 {
-                        almanacView
-                    } else if viewMode == 1 {
-                        customCalendarView
-                    } else {
-                        weatherDetailsView
-                    }
-                }
+            VStack(spacing: 12) {
+                NearTabPicker(items: ["黄历", "月历", "天气"], selection: $viewMode)
+                    .padding(.horizontal, 40)
+                    .padding(.top, 4)
                 
                 if viewMode == 0 {
-                    WeatherHeaderView(isCompact: true)
-                        .padding(.trailing, 20)
-                        .padding(.top, 50)
+                    almanacView
+                } else if viewMode == 1 {
+                    customCalendarView
+                } else {
+                    weatherDetailsView
                 }
             }
+            .padding(.bottom, 20)
         .padding(.bottom, 20)
         .onAppear {
             loadAlmanac()
@@ -105,6 +98,34 @@ struct CalendarView: View {
                             Text("农历 " + almanac.lunarDate)
                                 .font(.system(size: 16))
                                 .foregroundColor(.nearTextSecondary)
+                            
+                            // Integrated Weather Info
+                            if let weather = weatherService.weather {
+                                HStack(spacing: 8) {
+                                    Image(systemName: weatherIcon(code: weather.current.icon))
+                                        .font(.system(size: 14))
+                                        .foregroundColor(.nearPrimary)
+                                    
+                                    Text("\(weather.current.text) \(weather.current.temp)°C")
+                                        .font(.system(size: 14, weight: .medium))
+                                    
+                                    Text("·")
+                                        .foregroundColor(.nearTextSecondary.opacity(0.3))
+                                    
+                                    Text("湿度 \(weather.current.humidity)%")
+                                        .font(.system(size: 12))
+                                        .foregroundColor(.nearTextSecondary)
+                                    
+                                    if let air = weather.airNow {
+                                        Text("·")
+                                            .foregroundColor(.nearTextSecondary.opacity(0.3))
+                                        Text("空气 \(air.category)")
+                                            .font(.system(size: 12))
+                                            .foregroundColor(.nearTextSecondary)
+                                    }
+                                }
+                                .padding(.top, 4)
+                            }
                         }
                         
                         HStack(alignment: .top, spacing: 16) {
@@ -469,32 +490,32 @@ struct CalendarView: View {
     // MARK: - Weather Details View
     private var weatherDetailsView: some View {
         ScrollView(showsIndicators: false) {
-            VStack(spacing: 24) {
-                // Main Weather Card
+            VStack(spacing: 20) { // More breathing room
+                // Main Weather Card - Seamlessly integrated
                 WeatherHeaderView(isCompact: false)
+                    .padding(.horizontal, 24)
                     .padding(.top, 10)
                 
                 if let weather = weatherService.weather {
-                    // Highlights Section
-                    HStack(spacing: 16) {
+                    // Highlights Section - Glassy
+                    HStack(spacing: 12) {
                         WeatherStatBox(title: "湿度", value: "\(weather.current.humidity)%", icon: "humidity.fill", color: .blue)
                         WeatherStatBox(title: "风力", value: "\(weather.current.windScale)级", icon: "wind", color: .green)
                         WeatherStatBox(title: "能见度", value: "良好", icon: "eye.fill", color: .orange)
                     }
-                    .padding(.horizontal)
+                    .padding(.horizontal, 24)
 
-                    // Indices Grid
-                    VStack(alignment: .leading, spacing: 16) {
+                    // Indices Grid - Integrated
+                    VStack(alignment: .leading, spacing: 12) {
                         Text("💡 生活建议")
-                            .font(.system(size: 16, weight: .bold))
+                            .font(.system(size: 15, weight: .bold))
                             .foregroundColor(.nearTextPrimary)
-                            .padding(.horizontal)
+                            .padding(.horizontal, 24)
                         
-                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {
-                            // Only show specific 4 categories: Exercise(1), Clothing(3), Fishing(5), Travel(8)
+                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
                             let selectedTypes = ["1", "3", "5", "8"]
                             ForEach(weather.indices.filter { selectedTypes.contains($0.type) }) { index in
-                                VStack(alignment: .leading, spacing: 8) {
+                                VStack(alignment: .leading, spacing: 6) {
                                     HStack {
                                         Text(index.name)
                                             .font(.system(size: 12, weight: .bold))
@@ -510,39 +531,38 @@ struct CalendarView: View {
                                         .font(.system(size: 11))
                                         .foregroundColor(.nearTextSecondary)
                                         .lineLimit(3)
-                                        .fixedSize(horizontal: false, vertical: true)
                                 }
-                                .padding(16)
+                                .padding(14)
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                                .background(Color.white.opacity(0.5))
-                                .cornerRadius(16)
+                                .background(.ultraThinMaterial.opacity(0.6))
+                                .cornerRadius(12)
                             }
                         }
-                        .padding(.horizontal)
+                        .padding(.horizontal, 24)
                     }
                     
-                    // Forecast
-                    VStack(alignment: .leading, spacing: 16) {
+                    // Forecast - Seamless
+                    VStack(alignment: .leading, spacing: 12) {
                         Text("📅 近期预报")
-                            .font(.system(size: 16, weight: .bold))
+                            .font(.system(size: 15, weight: .bold))
                             .foregroundColor(.nearTextPrimary)
-                            .padding(.horizontal)
+                            .padding(.horizontal, 24)
                         
-                        VStack(spacing: 12) {
+                        VStack(spacing: 8) {
                             ForEach(weather.forecast) { day in
                                 HStack {
                                     Text(dayLabel(for: day.fxDate))
-                                        .font(.system(size: 14, weight: .medium))
-                                        .frame(width: 70, alignment: .leading)
+                                        .font(.system(size: 13, weight: .medium))
+                                        .frame(width: 60, alignment: .leading)
                                     
                                     Spacer()
                                     
-                                    HStack(spacing: 8) {
+                                    HStack(spacing: 6) {
                                         Image(systemName: weatherIcon(code: day.iconDay))
-                                            .font(.system(size: 16))
+                                            .font(.system(size: 14))
                                             .foregroundColor(.nearPrimary)
                                         Text(day.textDay)
-                                            .font(.system(size: 13))
+                                            .font(.system(size: 12))
                                             .foregroundColor(.nearTextSecondary)
                                     }
                                     
@@ -550,24 +570,21 @@ struct CalendarView: View {
                                     
                                     HStack(spacing: 12) {
                                         Text("\(day.tempMin)°").foregroundColor(.nearTextSecondary)
-                                        Capsule()
-                                            .fill(LinearGradient(gradient: Gradient(colors: [.blue.opacity(0.3), .orange.opacity(0.3)]), startPoint: .leading, endPoint: .trailing))
-                                            .frame(width: 40, height: 4)
                                         Text("\(day.tempMax)°").fontWeight(.bold)
                                     }
-                                    .font(.system(size: 13, design: .monospaced))
+                                    .font(.system(size: 12, design: .monospaced))
                                 }
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 14)
-                                .background(Color.white.opacity(0.4))
-                                .cornerRadius(12)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 12)
+                                .background(.ultraThinMaterial.opacity(0.5))
+                                .cornerRadius(10)
                             }
                         }
-                        .padding(.horizontal)
+                        .padding(.horizontal, 24)
                     }
                 }
             }
-            .padding(.bottom, 30)
+            .padding(.bottom, 20)
         }
     }
 
@@ -592,7 +609,7 @@ struct CalendarView: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 12)
-            .background(Color.white.opacity(0.5))
+            .background(.ultraThinMaterial.opacity(0.3))
             .cornerRadius(16)
         }
     }
