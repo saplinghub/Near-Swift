@@ -160,29 +160,42 @@ class WeatherService: ObservableObject {
             .eraseToAnyPublisher()
             
         
-        // New Air Quality API (Path Parameters)
-        let airPublisher: AnyPublisher<AirNow?, Error>
+        // WAQI Air Quality API (Geo Location)
+        let waqiPublisher: AnyPublisher<AirNow?, Error>
+        let waqiToken = storage.string(forKey: "waqiToken") ?? ""
+        
         if let lonStr = storage.string(forKey: "qWeatherLon"),
            let latStr = storage.string(forKey: "qWeatherLat"),
-           let lonVal = Double(lonStr),
-           let latVal = Double(latStr) {
-            let latFmt = String(format: "%.2f", latVal)
-            let lonFmt = String(format: "%.2f", lonVal)
-            airPublisher = fetchAirQualityV1(lat: latFmt, lon: lonFmt, key: key, host: baseUrl)
+           !waqiToken.isEmpty {
+            waqiPublisher = fetchWaqiAirQuality(lat: latStr, lon: lonStr, token: waqiToken)
                 .map { res -> AirNow? in
-                    // Map the new response to existing model or a compatible one
-                    // Assuming a standard mapping for now
-                    return AirNow(pubTime: "", aqi: "\(res.aqi ?? 0)", level: "", category: res.category ?? "未知", primary: "", pm10: "", pm2p5: "", no2: "", so2: "", co: "", o3: "")
+                    guard let data = res.data else { return nil }
+                    return AirNow(
+                        pubTime: data.time.s,
+                        aqi: "\(data.aqi)",
+                        level: "",
+                        category: self.formatWaqiCategory(data.aqi),
+                        primary: data.dominentpol,
+                        pm10: "\(data.iaqi.pm10?.v ?? 0)",
+                        pm2p5: "\(data.iaqi.pm25?.v ?? 0)",
+                        no2: "\(data.iaqi.no2?.v ?? 0)",
+                        so2: "\(data.iaqi.so2?.v ?? 0)",
+                        co: "\(data.iaqi.co?.v ?? 0)",
+                        o3: "\(data.iaqi.o3?.v ?? 0)"
+                    )
                 }
-                .catch { _ in Just(nil).setFailureType(to: Error.self) }
+                .catch { error in
+                    LogManager.shared.append("WAQI Error: \(error.localizedDescription)")
+                    return Just<AirNow?>(nil).setFailureType(to: Error.self)
+                }
                 .eraseToAnyPublisher()
         } else {
-            airPublisher = Just(nil).setFailureType(to: Error.self).eraseToAnyPublisher()
+            waqiPublisher = Just(nil).setFailureType(to: Error.self).eraseToAnyPublisher()
         }
         
         // Using Zip to wait for all
         Publishers.Zip4(nowPublisher, forecastPublisher, indicesPublisher, hourlyPublisher)
-            .combineLatest(Publishers.Zip(minutelyPublisher, airPublisher))
+            .combineLatest(Publishers.Zip(minutelyPublisher, waqiPublisher))
             .receive(on: DispatchQueue.main)
             .sink { [weak self] completion in
                 self?.isLoading = false
@@ -355,31 +368,33 @@ class WeatherService: ObservableObject {
             .eraseToAnyPublisher()
     }
     
-    // New Air Quality API with path parameters: /airquality/v1/current/{latitude}/{longitude}
-    struct AirQualityV1Response: Codable {
-        let aqi: Int?
-        let category: String?
-    }
-    
-    private func fetchAirQualityV1(lat: String, lon: String, key: String, host: String) -> AnyPublisher<AirQualityV1Response, Error> {
-        let urlString = "\(host)/airquality/v1/current/\(lat)/\(lon)"
+    private func fetchWaqiAirQuality(lat: String, lon: String, token: String) -> AnyPublisher<WaqiResponse, Error> {
+        let urlString = "https://api.waqi.info/feed/geo:\(lat);\(lon)/?token=\(token)"
         guard let url = URL(string: urlString) else {
             return Fail(error: URLError(.badURL)).eraseToAnyPublisher()
         }
         
-        var request = URLRequest(url: url)
-        request.addValue(key, forHTTPHeaderField: "X-QW-Api-Key")
-        
-        return URLSession.shared.dataTaskPublisher(for: request)
+        return URLSession.shared.dataTaskPublisher(for: url)
             .handleEvents(receiveOutput: { response in
                 if let httpRes = response.response as? HTTPURLResponse, httpRes.statusCode >= 400 {
                     let body = String(data: response.data, encoding: .utf8) ?? ""
-                    LogManager.shared.append("RES [\(httpRes.statusCode)]: \(url.path)")
-                    LogManager.shared.append("BODY: \(body)")
+                    LogManager.shared.append("WAQI RES [\(httpRes.statusCode)]: \(url.path)")
+                    LogManager.shared.append("WAQI BODY: \(body)")
                 }
             })
             .map(\.data)
-            .decode(type: AirQualityV1Response.self, decoder: JSONDecoder())
+            .decode(type: WaqiResponse.self, decoder: JSONDecoder())
             .eraseToAnyPublisher()
+    }
+    
+    private func formatWaqiCategory(_ aqi: Int) -> String {
+        switch aqi {
+        case 0...50: return "优"
+        case 51...100: return "良"
+        case 101...150: return "轻度污染"
+        case 151...200: return "中度污染"
+        case 201...300: return "重度污染"
+        default: return "严重污染"
+        }
     }
 }

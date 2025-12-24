@@ -80,10 +80,54 @@ struct WeatherIndex: Codable, Identifiable {
     let text: String         // Index description
 }
 
-// MARK: - Air Quality
+// MARK: - Air Quality (QWeather V1)
 struct AirNowResponse: Codable {
     let code: String
     let now: AirNow?
+}
+
+// MARK: - Air Quality (WAQI)
+struct WaqiResponse: Codable {
+    let status: String
+    let data: WaqiData?
+}
+
+struct WaqiData: Codable {
+    let aqi: Int
+    let idx: Int
+    let city: WaqiCity
+    let dominentpol: String
+    let iaqi: WaqiIaqi
+    let time: WaqiTime
+}
+
+struct WaqiCity: Codable {
+    let name: String
+    let geo: [Double]
+    let url: String
+}
+
+struct WaqiIaqi: Codable {
+    let co: WaqiVal?
+    let h: WaqiVal?
+    let no2: WaqiVal?
+    let o3: WaqiVal?
+    let p: WaqiVal?
+    let pm10: WaqiVal?
+    let pm25: WaqiVal?
+    let so2: WaqiVal?
+    let t: WaqiVal?
+    let w: WaqiVal?
+}
+
+struct WaqiVal: Codable {
+    let v: Double
+}
+
+struct WaqiTime: Codable {
+    let s: String // Local time
+    let tz: String
+    let v: Int
 }
 
 struct AirNow: Codable {

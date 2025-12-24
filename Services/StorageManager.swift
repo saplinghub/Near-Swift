@@ -7,6 +7,7 @@ class StorageManager: ObservableObject {
     @Published var qWeatherHost: String = "https://devapi.qweather.com/v7"
     @Published var qWeatherLocationId: String = "101010100" // Default: Beijing
     @Published var qWeatherLocationName: String = "北京"
+    @Published var waqiToken: String = ""
 
     private let countdownsKey = "countdowns"
     private let aiConfigKey = "aiConfig"
@@ -14,6 +15,7 @@ class StorageManager: ObservableObject {
     private let qWeatherHostPath = "qWeatherHost"
     private let qWeatherLocIdPath = "qWeatherLocId"
     private let qWeatherLocNamePath = "qWeatherLocName"
+    private let waqiTokenPath = "waqiToken"
 
     init() {
         loadAll()
@@ -50,6 +52,7 @@ class StorageManager: ObservableObject {
         qWeatherHost = UserDefaults.standard.string(forKey: qWeatherHostPath) ?? "https://devapi.qweather.com/v7"
         qWeatherLocationId = UserDefaults.standard.string(forKey: qWeatherLocIdPath) ?? "101010100"
         qWeatherLocationName = UserDefaults.standard.string(forKey: qWeatherLocNamePath) ?? "北京"
+        waqiToken = UserDefaults.standard.string(forKey: waqiTokenPath) ?? ""
     }
 
     func saveQWeatherKey() {
@@ -57,6 +60,7 @@ class StorageManager: ObservableObject {
         UserDefaults.standard.set(qWeatherHost, forKey: qWeatherHostPath)
         UserDefaults.standard.set(qWeatherLocationId, forKey: qWeatherLocIdPath)
         UserDefaults.standard.set(qWeatherLocationName, forKey: qWeatherLocNamePath)
+        UserDefaults.standard.set(waqiToken, forKey: waqiTokenPath)
     }
 
     func saveCountdowns() {

@@ -12,6 +12,7 @@ struct SettingsView: View {
     @State private var systemPrompt: String = ""
     @State private var qWeatherKey: String = ""
     @State private var qWeatherHost: String = ""
+    @State private var waqiToken: String = ""
     @State private var isTesting = false
     @State private var testMessage: String?
     @State private var locationSearchQuery: String = ""
@@ -95,6 +96,7 @@ struct SettingsView: View {
             
             self.qWeatherKey = storageManager.qWeatherKey
             self.qWeatherHost = storageManager.qWeatherHost
+            self.waqiToken = storageManager.waqiToken
         }
     }
     
@@ -173,6 +175,7 @@ struct SettingsView: View {
     func saveWeatherSettings() {
         storageManager.qWeatherKey = qWeatherKey
         storageManager.qWeatherHost = qWeatherHost
+        storageManager.waqiToken = waqiToken
         storageManager.saveQWeatherKey()
         weatherService.fetchWeather()
         isPresented = false
@@ -269,6 +272,8 @@ struct SettingsView: View {
                     SettingsInputRow(icon: "key", title: "API Key", placeholder: "填入您的 API Key", text: $qWeatherKey, isSecure: true)
                     
                     SettingsInputRow(icon: "globe", title: "API Host", placeholder: "https://devapi.qweather.com/v7", text: $qWeatherHost)
+                    
+                    SettingsInputRow(icon: "lock.shield", title: "WAQI Token", placeholder: "入您的 WAQI Token", text: $waqiToken, isSecure: true)
                     
                     HStack {
                         Button(action: testWeatherConnection) {
