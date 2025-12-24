@@ -9,6 +9,7 @@ class StatusBarManager: NSObject, NSWindowDelegate, NSMenuDelegate {
     private var aiService: AIService
     private var storageManager: StorageManager
     private var systemMonitor: SystemMonitor
+    private var weatherService: WeatherService
     private var eventMonitor: Any?
     private var isWindowVisible = false
     
@@ -22,6 +23,7 @@ class StatusBarManager: NSObject, NSWindowDelegate, NSMenuDelegate {
         self.aiService = aiService
         self.storageManager = storageManager
         self.systemMonitor = systemMonitor
+        self.weatherService = WeatherService()
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         
         super.init()
@@ -314,6 +316,7 @@ class StatusBarManager: NSObject, NSWindowDelegate, NSMenuDelegate {
             .environmentObject(aiService)
             .environmentObject(storageManager)
             .environmentObject(systemMonitor)
+            .environmentObject(weatherService)
 
         let hostingController = NSHostingController(rootView: contentView)
         

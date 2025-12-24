@@ -6,6 +6,7 @@ struct ContentView: View {
     @EnvironmentObject var aiService: AIService
     @EnvironmentObject var storageManager: StorageManager
     @EnvironmentObject var systemMonitor: SystemMonitor
+    @EnvironmentObject var weatherService: WeatherService
     
     @State private var showingAddView = false
     @State private var showingSettingsView = false
@@ -44,7 +45,7 @@ struct ContentView: View {
                     } else if selectedBottomTab == 2 {
                          // Tab 2: System View
                          VStack(spacing: 0) {
-                             PageHeader(title: "系统状态", showingSettingsSheet: $showingSettingsView)
+                             PageHeader(title: "系统", showingSettingsSheet: $showingSettingsView)
                              SystemView()
                          }
                          .transition(.opacity)
@@ -136,7 +137,7 @@ struct ContentView: View {
                      .zIndex(3)
             }
         }
-        .frame(width: 380, height: 600)
+        .frame(width: 372, height: 600)
         .background(
              ZStack {
                 LinearGradient(

@@ -7,8 +7,10 @@ struct HeaderView: View {
     var body: some View {
         HStack {
             // Left: Title
-            Text("Near 倒计时")
-                .font(.system(size: 20, weight: .heavy)) // Matches "Near 倒计时" in image
+            Text("NEAR")
+                .font(.system(size: 32, weight: .semibold, design: .rounded))
+                .italic()
+                .tracking(2)
                 .foregroundColor(.nearTextPrimary)
                 .padding(.leading, 20)
 

@@ -4,6 +4,7 @@ import Combine
 struct CalendarView: View {
     @EnvironmentObject var aiService: AIService
     @EnvironmentObject var countdownManager: CountdownManager
+    @EnvironmentObject var weatherService: WeatherService
     @State private var viewMode: Int = 0
     @State private var almanac: AlmanacResponse?
     @State private var currentDate = Date()
@@ -56,25 +57,39 @@ struct CalendarView: View {
     ]
     
     var body: some View {
-        VStack(spacing: 12) {
-            Picker("", selection: $viewMode) {
-                Text("今日黄历").tag(0)
-                Text("月历").tag(1)
+            ZStack(alignment: .topTrailing) {
+                VStack(spacing: 12) {
+                    NearTabPicker(items: ["今日黄历", "月历", "天气"], selection: $viewMode)
+                        .padding(.horizontal, 40)
+                        .padding(.top, 4)
+                    
+                    if viewMode == 0 {
+                        almanacView
+                    } else if viewMode == 1 {
+                        customCalendarView
+                    } else {
+                        weatherDetailsView
+                    }
+                }
+                
+                if viewMode == 0 {
+                    WeatherHeaderView(isCompact: true)
+                        .padding(.trailing, 20)
+                        .padding(.top, 50)
+                }
             }
-            .pickerStyle(SegmentedPickerStyle())
-            .padding(.horizontal, 40)
-            .padding(.top, 4)
-            
-            if viewMode == 0 {
-                almanacView
-            } else {
-                customCalendarView
-            }
-        }
         .padding(.bottom, 20)
         .onAppear {
             loadAlmanac()
+            selectToday()
         }
+    }
+    
+    private func selectToday() {
+        let today = Date()
+        selectedDate = today
+        selectedHoliday = getHoliday(for: today)
+        selectedCountdown = getCountdown(for: today)
     }
     
     // MARK: - Almanac View
@@ -299,58 +314,85 @@ struct CalendarView: View {
     private var infoPanelView: some View {
         Group {
             if let selected = selectedDate {
-                VStack(alignment: .leading, spacing: 10) {
-                    // Date + Lunar Date
-                    HStack {
-                        let formatter = DateFormatter()
-                        Text({ formatter.dateFormat = "yyyy年M月d日"; return formatter.string(from: selected) }())
-                            .font(.subheadline)
-                            .foregroundColor(.nearTextPrimary)
-                        Text(LunarCalendar.getLunarDateString(for: selected))
-                            .font(.subheadline)
-                            .foregroundColor(.nearSecondary)
-                    }
-                    
-                    // Holiday
-                    if let holiday = selectedHoliday {
-                        VStack(alignment: .leading, spacing: 4) {
-                            HStack {
-                                Image(systemName: "star.fill")
-                                    .foregroundColor(.nearPrimary)
-                                Text(holiday.name)
-                                    .font(.subheadline).fontWeight(.semibold)
-                                    .foregroundColor(.nearTextPrimary)
+                ZStack(alignment: .topTrailing) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        // Date + Lunar Date
+                        HStack {
+                            let formatter = DateFormatter()
+                            Text({ formatter.dateFormat = "yyyy年M月d日"; return formatter.string(from: selected) }())
+                                .font(.subheadline)
+                                .foregroundColor(.nearTextPrimary)
+                            Text(LunarCalendar.getLunarDateString(for: selected))
+                                .font(.subheadline)
+                                .foregroundColor(.nearSecondary)
+                        }
+                        
+                        // Holiday
+                        if let holiday = selectedHoliday {
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack {
+                                    Image(systemName: "star.fill")
+                                        .foregroundColor(.nearPrimary)
+                                    Text(holiday.name)
+                                        .font(.subheadline).fontWeight(.semibold)
+                                        .foregroundColor(.nearTextPrimary)
+                                }
+                                Text(holiday.description)
+                                    .font(.caption)
+                                    .foregroundColor(.nearTextSecondary)
+                                    .lineLimit(2)
                             }
-                            Text(holiday.description)
+                        }
+                        
+                        // Countdown
+                        if let countdown = selectedCountdown {
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack {
+                                    Image(systemName: "calendar.badge.clock")
+                                        .foregroundColor(.orange)
+                                    Text(countdown.name)
+                                        .font(.subheadline).fontWeight(.semibold)
+                                        .foregroundColor(.nearTextPrimary)
+                                    Image(systemName: countdown.icon.sfSymbol)
+                                        .foregroundColor(Color(hex: countdown.icon.color))
+                                }
+                                let daysLeft = Calendar.current.dateComponents([.day], from: Date(), to: countdown.targetDate).day ?? 0
+                                Text(daysLeft > 0 ? "还有 \(daysLeft) 天" : (daysLeft == 0 ? "就是今天！" : "已过 \(-daysLeft) 天"))
+                                    .font(.caption)
+                                    .foregroundColor(.nearTextSecondary)
+                            }
+                        }
+                        
+                        if selectedHoliday == nil && selectedCountdown == nil {
+                            Text("今日暂无特殊安排。")
                                 .font(.caption)
-                                .foregroundColor(.nearTextSecondary)
-                                .lineLimit(3)
+                                .foregroundColor(.nearTextSecondary.opacity(0.5))
+                                .padding(.top, 4)
                         }
                     }
+                    .padding(16)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     
-                    // Countdown
-                    if let countdown = selectedCountdown {
-                        VStack(alignment: .leading, spacing: 4) {
-                            HStack {
-                                Image(systemName: "calendar.badge.clock")
-                                    .foregroundColor(.orange)
-                                Text(countdown.name)
-                                    .font(.subheadline).fontWeight(.semibold)
-                                    .foregroundColor(.nearTextPrimary)
-                                Image(systemName: countdown.icon.sfSymbol)
-                                    .foregroundColor(Color(hex: countdown.icon.color))
-                            }
-                            let daysLeft = Calendar.current.dateComponents([.day], from: Date(), to: countdown.targetDate).day ?? 0
-                            Text(daysLeft > 0 ? "还有 \(daysLeft) 天" : (daysLeft == 0 ? "就是今天！" : "已过 \(-daysLeft) 天"))
-                                .font(.caption)
-                                .foregroundColor(.nearTextSecondary)
+                    // Compact Weather in Corner
+                    if let weather = weatherService.weather,
+                       let dayForecast = weather.forecast.first(where: { $0.fxDate == DateFormatter.yyyyMMdd.string(from: selected) }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: weatherIcon(code: dayForecast.iconDay))
+                                .font(.system(size: 14))
+                                .foregroundColor(.nearPrimary)
+                            Text("\(dayForecast.tempMin)°/\(dayForecast.tempMax)°")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundColor(.nearTextPrimary)
                         }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.nearPrimary.opacity(0.05))
+                        .cornerRadius(8)
+                        .padding(12)
                     }
                 }
-                .padding()
-                .frame(maxWidth: .infinity, alignment: .leading)
                 .background(Color.white.opacity(0.6))
-                .cornerRadius(10)
+                .cornerRadius(12)
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
             }
@@ -423,9 +465,165 @@ struct CalendarView: View {
             selectedCountdown = nil
         }
     }
+
+    // MARK: - Weather Details View
+    private var weatherDetailsView: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(spacing: 24) {
+                // Main Weather Card
+                WeatherHeaderView(isCompact: false)
+                    .padding(.top, 10)
+                
+                if let weather = weatherService.weather {
+                    // Highlights Section
+                    HStack(spacing: 16) {
+                        WeatherStatBox(title: "湿度", value: "\(weather.current.humidity)%", icon: "humidity.fill", color: .blue)
+                        WeatherStatBox(title: "风力", value: "\(weather.current.windScale)级", icon: "wind", color: .green)
+                        WeatherStatBox(title: "能见度", value: "良好", icon: "eye.fill", color: .orange)
+                    }
+                    .padding(.horizontal)
+
+                    // Indices Grid
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("💡 生活建议")
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundColor(.nearTextPrimary)
+                            .padding(.horizontal)
+                        
+                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {
+                            // Only show specific 4 categories: Exercise(1), Clothing(3), Fishing(5), Travel(8)
+                            let selectedTypes = ["1", "3", "5", "8"]
+                            ForEach(weather.indices.filter { selectedTypes.contains($0.type) }) { index in
+                                VStack(alignment: .leading, spacing: 8) {
+                                    HStack {
+                                        Text(index.name)
+                                            .font(.system(size: 12, weight: .bold))
+                                        Spacer()
+                                        Text(index.category)
+                                            .font(.system(size: 10))
+                                            .padding(.horizontal, 6)
+                                            .padding(.vertical, 2)
+                                            .background(Color.nearPrimary.opacity(0.1))
+                                            .cornerRadius(4)
+                                    }
+                                    Text(index.text)
+                                        .font(.system(size: 11))
+                                        .foregroundColor(.nearTextSecondary)
+                                        .lineLimit(3)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                                .padding(16)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(Color.white.opacity(0.5))
+                                .cornerRadius(16)
+                            }
+                        }
+                        .padding(.horizontal)
+                    }
+                    
+                    // Forecast
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("📅 近期预报")
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundColor(.nearTextPrimary)
+                            .padding(.horizontal)
+                        
+                        VStack(spacing: 12) {
+                            ForEach(weather.forecast) { day in
+                                HStack {
+                                    Text(dayLabel(for: day.fxDate))
+                                        .font(.system(size: 14, weight: .medium))
+                                        .frame(width: 70, alignment: .leading)
+                                    
+                                    Spacer()
+                                    
+                                    HStack(spacing: 8) {
+                                        Image(systemName: weatherIcon(code: day.iconDay))
+                                            .font(.system(size: 16))
+                                            .foregroundColor(.nearPrimary)
+                                        Text(day.textDay)
+                                            .font(.system(size: 13))
+                                            .foregroundColor(.nearTextSecondary)
+                                    }
+                                    
+                                    Spacer()
+                                    
+                                    HStack(spacing: 12) {
+                                        Text("\(day.tempMin)°").foregroundColor(.nearTextSecondary)
+                                        Capsule()
+                                            .fill(LinearGradient(gradient: Gradient(colors: [.blue.opacity(0.3), .orange.opacity(0.3)]), startPoint: .leading, endPoint: .trailing))
+                                            .frame(width: 40, height: 4)
+                                        Text("\(day.tempMax)°").fontWeight(.bold)
+                                    }
+                                    .font(.system(size: 13, design: .monospaced))
+                                }
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 14)
+                                .background(Color.white.opacity(0.4))
+                                .cornerRadius(12)
+                            }
+                        }
+                        .padding(.horizontal)
+                    }
+                }
+            }
+            .padding(.bottom, 30)
+        }
+    }
+
+    struct WeatherStatBox: View {
+        let title: String
+        let value: String
+        let icon: String
+        let color: Color
+        
+        var body: some View {
+            VStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.system(size: 18))
+                    .foregroundColor(color)
+                VStack(spacing: 2) {
+                    Text(value)
+                        .font(.system(size: 14, weight: .bold))
+                    Text(title)
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .background(Color.white.opacity(0.5))
+            .cornerRadius(16)
+        }
+    }
+    
+    private func dayLabel(for dateString: String) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        if let date = formatter.date(from: dateString) {
+            if Calendar.current.isDateInToday(date) { return "今天" }
+            if Calendar.current.isDateInTomorrow(date) { return "明天" }
+            formatter.dateFormat = "EEEE"
+            return formatter.string(from: date)
+        }
+        return dateString
+    }
+    
+    private func weatherIcon(code: String) -> String {
+        switch code {
+        case "100": return "sun.max.fill"
+        case "101", "102", "103": return "cloud.sun.fill"
+        case "104": return "cloud.fill"
+        case "150": return "moon.stars.fill"
+        case "300", "301": return "cloud.sun.rain.fill"
+        case "305", "306", "307": return "cloud.heavyrain.fill"
+        case "400", "401": return "cloud.snow.fill"
+        default: return "cloud.fill"
+        }
+    }
 }
 
-// Helpers
+// MARK: - Extensions
 extension Date {
     func monthYearString() -> String {
         let formatter = DateFormatter()

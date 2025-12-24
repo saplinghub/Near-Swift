@@ -17,6 +17,9 @@ class LunarCalendar {
         "廿一", "廿二", "廿三", "廿四", "廿五", "廿六", "廿七", "廿八", "廿九", "三十"
     ]
     
+    // Memory cache for lunar holidays to avoid redundant 400-day cycles
+    private static var holidayCache: [String: Date] = [:]
+    
     /// Get lunar date components for a solar date
     static func getLunarComponents(from date: Date) -> (year: Int, month: Int, day: Int, isLeapMonth: Bool) {
         let components = chineseCalendar.dateComponents([.year, .month, .day], from: date)
@@ -51,6 +54,11 @@ class LunarCalendar {
     ///   - isLeapMonth: Whether to look in the leap month
     /// - Returns: The corresponding Gregorian date, or nil if not found
     static func getLunarHolidayDate(year: Int, lunarMonth: Int, lunarDay: Int, isLeapMonth: Bool = false) -> Date? {
+        let cacheKey = "\(year)-\(lunarMonth)-\(lunarDay)-\(isLeapMonth)"
+        if let cachedDate = holidayCache[cacheKey] {
+            return cachedDate
+        }
+        
         // Strategy: Iterate through all days of the Gregorian year and find matching lunar date
         // This is more reliable than trying to reverse-calculate
         
@@ -72,6 +80,7 @@ class LunarCalendar {
             if gregorianYear > year { break }
             
             if lunar.month == lunarMonth && lunar.day == lunarDay && lunar.isLeapMonth == isLeapMonth {
+                holidayCache[cacheKey] = date
                 return date
             }
         }

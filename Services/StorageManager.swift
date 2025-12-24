@@ -3,9 +3,17 @@ import Foundation
 class StorageManager: ObservableObject {
     @Published var countdowns: [CountdownEvent] = []
     @Published var aiConfig: AIConfig = AIConfig.createDefault()
+    @Published var qWeatherKey: String = ""
+    @Published var qWeatherHost: String = "https://devapi.qweather.com/v7"
+    @Published var qWeatherLocationId: String = "101010100" // Default: Beijing
+    @Published var qWeatherLocationName: String = "北京"
 
     private let countdownsKey = "countdowns"
     private let aiConfigKey = "aiConfig"
+    private let qWeatherKeyPath = "qWeatherKey"
+    private let qWeatherHostPath = "qWeatherHost"
+    private let qWeatherLocIdPath = "qWeatherLocId"
+    private let qWeatherLocNamePath = "qWeatherLocName"
 
     init() {
         loadAll()
@@ -14,6 +22,7 @@ class StorageManager: ObservableObject {
     private func loadAll() {
         loadCountdowns()
         loadAIConfig()
+        loadQWeatherKey()
     }
 
     private func loadCountdowns() {
@@ -34,6 +43,20 @@ class StorageManager: ObservableObject {
         } catch {
             print("Error loading AI config: \(error)")
         }
+    }
+
+    private func loadQWeatherKey() {
+        qWeatherKey = UserDefaults.standard.string(forKey: qWeatherKeyPath) ?? ""
+        qWeatherHost = UserDefaults.standard.string(forKey: qWeatherHostPath) ?? "https://devapi.qweather.com/v7"
+        qWeatherLocationId = UserDefaults.standard.string(forKey: qWeatherLocIdPath) ?? "101010100"
+        qWeatherLocationName = UserDefaults.standard.string(forKey: qWeatherLocNamePath) ?? "北京"
+    }
+
+    func saveQWeatherKey() {
+        UserDefaults.standard.set(qWeatherKey, forKey: qWeatherKeyPath)
+        UserDefaults.standard.set(qWeatherHost, forKey: qWeatherHostPath)
+        UserDefaults.standard.set(qWeatherLocationId, forKey: qWeatherLocIdPath)
+        UserDefaults.standard.set(qWeatherLocationName, forKey: qWeatherLocNamePath)
     }
 
     func saveCountdowns() {
