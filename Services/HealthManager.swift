@@ -23,8 +23,7 @@ class HealthManager: ObservableObject {
     }
     
     private var currentLogFile: URL {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
+        let formatter = SharedUtils.dateFormatter(format: "yyyy-MM-dd")
         return healthDirectory.appendingPathComponent("\(formatter.string(from: Date())).json")
     }
     

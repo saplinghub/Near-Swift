@@ -86,13 +86,11 @@ class UserIntentMonitor: ObservableObject {
     }
     
     private func recordLog(event: String) {
-        let date = Date()
-        let formatter = DateFormatter()
-        let timestamp = formatter.string(from: date)
+        let date = SharedUtils.now
+        let timestamp = SharedUtils.dateFormatter(format: "yyyy-MM-dd HH:mm:ss").string(from: date)
         let logEntry = "[\(timestamp)] \(event)\n"
         
-        formatter.dateFormat = "yyyy-MM-dd"
-        let fileName = "\(formatter.string(from: date)).log"
+        let fileName = "\(SharedUtils.dateFormatter(format: "yyyy-MM-dd").string(from: date)).log"
         let fileURL = logDirectory.appendingPathComponent(fileName)
         
         if let data = logEntry.data(using: .utf8) {

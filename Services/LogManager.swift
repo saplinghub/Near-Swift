@@ -7,18 +7,6 @@ class LogManager: ObservableObject {
     @Published var logs: String = ""
     private var cancellables = Set<AnyCancellable>()
     
-    private let formatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd HH:mm:ss.SSS"
-        return f
-    }()
-    
-    private let fileDateFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd"
-        return f
-    }()
-    
     private var logDirectory: URL {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         let dir = appSupport.appendingPathComponent("Near/Logs")
@@ -33,7 +21,7 @@ class LogManager: ObservableObject {
     }
     
     func append(_ message: String) {
-        let timestamp = formatter.string(from: Date())
+        let timestamp = SharedUtils.dateFormatter(format: "yyyy-MM-dd HH:mm:ss.SSS").string(from: Date())
         let newEntry = "[\(timestamp)] \(message)\n"
         
         // 1. Memory Log (Debug UI)
@@ -54,7 +42,7 @@ class LogManager: ObservableObject {
     }
     
     private func logToFile(_ entry: String) {
-        let fileName = "\(fileDateFormatter.string(from: Date())).log"
+        let fileName = "\(SharedUtils.dateFormatter(format: "yyyy-MM-dd").string(from: Date())).log"
         let fileURL = logDirectory.appendingPathComponent(fileName)
         
         if let data = entry.data(using: .utf8) {

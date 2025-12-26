@@ -12,6 +12,7 @@ class StorageManager: ObservableObject {
     @Published var isSystemAwarenessEnabled: Bool = true // Renamed from isPetSystemAwarenessEnabled
     @Published var isPetIntentAwarenessEnabled: Bool = true
     @Published var isHealthReminderEnabled: Bool = true
+    @Published var isWindmillEnabled: Bool = true
 
     private let countdownsKey = "countdowns"
     private let aiConfigKey = "aiConfig"
@@ -65,6 +66,7 @@ class StorageManager: ObservableObject {
         self.isSystemAwarenessEnabled = UserDefaults.standard.object(forKey: isSystemAwarenessKey) as? Bool ?? true
         self.isPetIntentAwarenessEnabled = UserDefaults.standard.object(forKey: isPetIntentAwarenessKey) as? Bool ?? true
         self.isHealthReminderEnabled = UserDefaults.standard.object(forKey: isHealthReminderKey) as? Bool ?? true
+        self.isWindmillEnabled = UserDefaults.standard.object(forKey: "isWindmillEnabled") as? Bool ?? true
     }
 
     func saveQWeatherKey() {
@@ -135,5 +137,10 @@ class StorageManager: ObservableObject {
             countdowns[index] = updated
         }
         saveCountdowns()
+    }
+    
+    func saveGeneralSettings(isWindmillEnabled: Bool) {
+        self.isWindmillEnabled = isWindmillEnabled
+        UserDefaults.standard.set(isWindmillEnabled, forKey: "isWindmillEnabled")
     }
 }

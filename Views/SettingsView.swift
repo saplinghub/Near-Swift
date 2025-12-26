@@ -27,6 +27,7 @@ struct SettingsView: View {
     @State private var isPetSystemAwarenessEnabled: Bool = true
     @State private var isPetIntentAwarenessEnabled: Bool = true
     @State private var isHealthReminderEnabled: Bool = true
+    @State private var isWindmillEnabled: Bool = true
     @State private var isAccessibilityGranted: Bool = false
     
     // Save Feedback
@@ -150,6 +151,7 @@ struct SettingsView: View {
             self.isPetSystemAwarenessEnabled = storageManager.isSystemAwarenessEnabled
             self.isPetIntentAwarenessEnabled = storageManager.isPetIntentAwarenessEnabled
             self.isHealthReminderEnabled = storageManager.isHealthReminderEnabled
+            self.isWindmillEnabled = storageManager.isWindmillEnabled
             self.checkAccessibilityStatus()
         }
     }
@@ -251,6 +253,12 @@ struct SettingsView: View {
         storageManager.waqiToken = waqiToken
         storageManager.saveQWeatherKey()
         weatherService.fetchWeather()
+        showSaveFeedback()
+    }
+
+    func saveGeneralSettings() {
+        storageManager.saveGeneralSettings(isWindmillEnabled: isWindmillEnabled)
+        StatusBarManager.shared?.updateWindmillState()
         showSaveFeedback()
     }
 
@@ -722,6 +730,55 @@ struct SettingsView: View {
                                 selectedTab = 0
                             }
                         }
+                    }
+                }
+                .padding(16)
+                .background(Color.white)
+                .cornerRadius(12)
+                .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
+                
+                // Function Settings
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack {
+                        Image(systemName: "gearshape.2.fill")
+                            .foregroundColor(.nearPrimary)
+                        Text("功能设置")
+                            .font(.headline)
+                    }
+                    
+                    VStack(spacing: 0) {
+                        Toggle(isOn: $isWindmillEnabled) {
+                            HStack {
+                                Image(systemName: "fan.fill")
+                                    .foregroundColor(.nearTextSecondary)
+                                VStack(alignment: .leading) {
+                                    Text("状态栏风车转动")
+                                        .font(.system(size: 14, weight: .medium))
+                                    Text("关闭后风车将停止转动以极致节省资源")
+                                        .font(.system(size: 11))
+                                        .foregroundColor(.nearTextSecondary)
+                                }
+                            }
+                        }
+                        .toggleStyle(SwitchToggleStyle(tint: .nearPrimary))
+                        .padding(.vertical, 12)
+                        
+                        Divider()
+                        
+                        Button(action: saveGeneralSettings) {
+                            HStack {
+                                Spacer()
+                                Text("保存通用设置")
+                                    .font(.system(size: 14, weight: .bold))
+                                Spacer()
+                            }
+                            .padding(.vertical, 10)
+                            .background(Color.nearPrimary)
+                            .foregroundColor(.white)
+                            .cornerRadius(8)
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.top, 16)
                     }
                 }
                 .padding(16)

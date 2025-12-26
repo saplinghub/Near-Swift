@@ -36,6 +36,7 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
     
     // 通知计时器：用于频率控制
     private var lastNotificationTimes: [String: Date] = [:]
+    private var lastDeepCheckTime: Date = .distantPast
     
     // 通知等级定义
     enum NotificationLevel: Int {
@@ -74,11 +75,13 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
         checkTimer?.invalidate()
         walkTimer?.invalidate()
         messageTimer?.invalidate()
+        monitor?.stopMonitoring()
         withAnimation { model.isMessageVisible = false }
     }
     
     private func handleIdleExit() {
         LogManager.shared.append("[PET] Detected Idle Exit: Restoring activities")
+        monitor?.startMonitoring()
         startMonitoring()
         
         // 延迟 1-3s 触发拟人化唤醒
@@ -105,38 +108,57 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
         
         // 启动时同步持久化设置
         let defaults = UserDefaults.standard
-        model.isSelfAwarenessEnabled = defaults.object(forKey: "isPetSelfAwarenessEnabled") as? Bool ?? true
-        model.isSystemAwarenessEnabled = defaults.object(forKey: "isPetSystemAwarenessEnabled") as? Bool ?? true
-        model.isIntentAwarenessEnabled = defaults.object(forKey: "isPetIntentAwarenessEnabled") as? Bool ?? true
+        // 静态模式：停用所有非必要的后台轮询以节省资源
+        self.monitor?.stopMonitoring()
+        self.intentMonitor = nil // 彻底停用意图追踪
         
         startMonitoring()
     }
     
 
     private func startMonitoring() {
-        checkTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+        // 静态模式：降低至 2.0s 仅用于处理边缘吸附定位
+        resetTimer(interval: 2.0)
+    }
+    
+    private func resetTimer(interval: TimeInterval) {
+        checkTimer?.invalidate()
+        checkTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             self?.updateState()
         }
     }
     
     private func updateState() {
         let isDragging = NSEvent.pressedMouseButtons != 0
+        
+        // 1. 动态步长逻辑：如果没有任何交互且宠物处于闲置，降频至 1.0s 以节省 CPU
+        let shouldLowFreq = !isDragging && model.state == .idle && !model.isMessageVisible
+        let currentInterval = checkTimer?.timeInterval ?? 0.1
+        let targetInterval: TimeInterval = shouldLowFreq ? 1.0 : 0.1
+        
+        if abs(currentInterval - targetInterval) > 0.01 {
+            resetTimer(interval: targetInterval)
+        }
+
         if isDragging {
             stopWalking() 
             handleDocking(isDragging: true)
         } else {
             handleDocking(isDragging: false)
             
-            // 实时同步：如果开关关闭且正在漫步，立即停止
-            if !model.isSelfAwarenessEnabled && model.state == .walking {
-                stopWalking()
-            }
-            
+            // 静态化：移除所有主动感知和自发动作
+            /*
             handleSelfAwareness()
-            updateSystemAwareness() 
-            updateIntentAwareness()
-            updateHealthReminders()
-            updateWeatherInsights() // 天气感知集成
+            
+            let now = SharedUtils.now
+            if now.timeIntervalSince(lastDeepCheckTime) >= 2.0 {
+                updateSystemAwareness() 
+                updateIntentAwareness()
+                updateHealthReminders()
+                updateWeatherInsights()
+                lastDeepCheckTime = now
+            }
+            */
         }
     }
     
@@ -306,9 +328,7 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
     private func updateWeatherInsights() {
         guard let weather = WeatherService.shared.weather?.current else { return }
         let now = Date()
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        let todayStr = formatter.string(from: now)
+        let todayStr = SharedUtils.dateFormatter(format: "yyyy-MM-dd").string(from: now)
         
         // 1. 每日首次使用电脑时的天气提醒 (带按钮)
         let isNewDay = lastWeatherPromptDate != todayStr
@@ -466,10 +486,10 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
         let w = window.frame.width
         let h = window.frame.height
         switch edge {
-        case .left: origin.x = screen.minX - w/2 + 20
-        case .right: origin.x = screen.maxX - w/2 - 20
-        case .bottom: origin.y = screen.minY - h/2 + 30
-        case .top: origin.y = screen.maxY - h/2 - 30
+        case .left: origin.x = screen.minX - w/2 + 10 // 静态化后边缘保留更少，使其更“贴”
+        case .right: origin.x = screen.maxX - w/2 - 10
+        case .bottom: origin.y = screen.minY - h/2 + 20
+        case .top: origin.y = screen.maxY - h/2 - 20
         case .none: break
         }
         if abs(window.frame.origin.x - origin.x) > 1 || abs(window.frame.origin.y - origin.y) > 1 {
@@ -497,28 +517,26 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
         let target = CGPoint(x: targetX - window.frame.width/2, y: targetY - window.frame.height/2)
         model.state = .walking
         model.walkTarget = target
-        walkTimer?.invalidate()
-        walkTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] timer in
-            guard let self = self, let win = self.window else { timer.invalidate(); return }
-            
-            // 二次校验：确保开关关闭时逻辑能彻底停掉
-            if !self.model.isSelfAwarenessEnabled {
-                self.stopWalking()
-                return
-            }
-            let curr = win.frame.origin
-            let dx = target.x - curr.x
-            let dy = target.y - curr.y
+        
+        // 彻底废弃 Timer 步进，改用 Core Animation (NSAnimationContext) 驱动
+        NSAnimationContext.runAnimationGroup({ context in
+            let dx = target.x - window.frame.origin.x
+            let dy = target.y - window.frame.origin.y
             let dist = hypot(dx, dy)
-            if dist < 2.0 {
-                self.stopWalking()
-                if Double.random(in: 0...1) > 0.6 {
-                    self.notify(self.randomQuotes.randomElement() ?? "散步真开心~", level: .normal, type: .fun)
-                }
-            } else {
-                win.setFrameOrigin(CGPoint(x: curr.x + (dx/dist)*1.0, y: curr.y + (dy/dist)*1.0))
+            
+            // 保持约 10-20 pts/s 的优雅速度
+            context.duration = dist / 15.0 
+            context.timingFunction = CAMediaTimingFunction(name: .linear)
+            
+            window.animator().setFrameOrigin(target)
+        }, completionHandler: { [weak self] in
+            // 动画结束后校验是否由于“抓取”导致的已停止
+            guard self?.model.state == .walking else { return }
+            self?.stopWalking()
+            if Double.random(in: 0...1) > 0.6 {
+                self?.notify(self?.randomQuotes.randomElement() ?? "散步真开心~", level: .normal, type: .fun)
             }
-        }
+        })
     }
     
     private func stopWalking() {

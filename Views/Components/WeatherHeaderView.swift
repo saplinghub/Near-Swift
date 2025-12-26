@@ -156,14 +156,18 @@ struct WeatherHeaderView: View {
         }
     }
     
+    private func getTimeString() -> String {
+        let formatter = SharedUtils.dateFormatter(format: "HH:mm")
+        return formatter.string(from: Date())
+    }
+    
     private func dayLabel(for dateString: String) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
+        let formatter = SharedUtils.dateFormatter(format: "yyyy-MM-dd")
         if let date = formatter.date(from: dateString) {
             if Calendar.current.isDateInToday(date) { return "今天" }
             if Calendar.current.isDateInTomorrow(date) { return "明天" }
-            formatter.dateFormat = "E"
-            return formatter.string(from: date)
+            let dayFormatter = SharedUtils.dateFormatter(format: "E")
+            return dayFormatter.string(from: date)
         }
         return ""
     }

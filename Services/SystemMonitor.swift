@@ -24,11 +24,17 @@ class SystemMonitor: ObservableObject {
     }
     
     func startMonitoring() {
+        guard timer == nil else { return }
         // Update every 2 seconds to be efficient
         timer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
             self?.updateStats()
         }
         updateStats() // Initial update
+    }
+    
+    func stopMonitoring() {
+        timer?.invalidate()
+        timer = nil
     }
     
     private func updateStats() {

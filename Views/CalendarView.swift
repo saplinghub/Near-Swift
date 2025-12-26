@@ -339,8 +339,8 @@ struct CalendarView: View {
                     VStack(alignment: .leading, spacing: 10) {
                         // Date + Lunar Date
                         HStack {
-                            let formatter = DateFormatter()
-                            Text({ formatter.dateFormat = "yyyy年M月d日"; return formatter.string(from: selected) }())
+                            let dateStr = SharedUtils.dateFormatter(format: "yyyy年M月d日").string(from: selected)
+                            Text(dateStr)
                                 .font(.subheadline)
                                 .foregroundColor(.nearTextPrimary)
                             Text(LunarCalendar.getLunarDateString(for: selected))
@@ -615,13 +615,11 @@ struct CalendarView: View {
     }
     
     private func dayLabel(for dateString: String) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        if let date = formatter.date(from: dateString) {
-            if Calendar.current.isDateInToday(date) { return "今天" }
-            if Calendar.current.isDateInTomorrow(date) { return "明天" }
-            formatter.dateFormat = "EEEE"
-            return formatter.string(from: date)
+        let inputFormatter = SharedUtils.dateFormatter(format: "yyyy-MM-dd")
+        if let date = inputFormatter.date(from: dateString) {
+            if SharedUtils.calendar.isDateInToday(date) { return "今天" }
+            if SharedUtils.calendar.isDateInTomorrow(date) { return "明天" }
+            return SharedUtils.dateFormatter(format: "EEEE").string(from: date)
         }
         return dateString
     }
@@ -643,9 +641,7 @@ struct CalendarView: View {
 // MARK: - Extensions
 extension Date {
     func monthYearString() -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy年MM月"
-        return formatter.string(from: self)
+        return SharedUtils.dateFormatter(format: "yyyy年MM月").string(from: self)
     }
     
     func daysInMonth() -> [Date] {
@@ -663,9 +659,7 @@ extension Date {
 }
 
 extension DateFormatter {
-    static let yyyyMMdd: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter
-    }()
+    static var yyyyMMdd: DateFormatter {
+        return SharedUtils.dateFormatter(format: "yyyy-MM-dd")
+    }
 }

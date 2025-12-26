@@ -253,19 +253,13 @@ struct DateCardView: View {
     @Binding var isExpanded: Bool
     let title: String
     
-    private var dateFormatter: DateFormatter {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd HH:mm"
-        return formatter
-    }
-    
     var body: some View {
         VStack(spacing: 0) {
             // Card Header (Always Visible)
             Button(action: { withAnimation(.spring()) { isExpanded.toggle() } }) {
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(dateFormatter.string(from: date))
+                        Text(SharedUtils.dateFormatter(format: "yyyy-MM-dd HH:mm").string(from: date))
                             .font(.system(size: 16, weight: .bold, design: .rounded))
                             .foregroundColor(.nearTextPrimary)
                     }

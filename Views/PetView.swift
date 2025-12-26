@@ -2,55 +2,50 @@ import SwiftUI
 
 struct PetView: View {
     @ObservedObject var model: PetModel
-    @State private var bounce: Bool = false
     
     // 追踪旧气泡的淡出动效
     @State private var shatteringId: UUID? = nil
     
     var body: some View {
         ZStack {
-            // 背景气场 (颜色随负载变化)
-            Circle()
-                .fill(auraColor.opacity(0.15))
-                .frame(width: 80, height: 80)
-                .scaleEffect(bounce ? 1.1 : 0.9)
-                .blur(radius: model.isDocked ? 5 : 0)
-                .animation(.easeInOut(duration: 1.0), value: model.cpuLoadLevel)
-            
-            // 宠物主体
-            VStack(spacing: -8) {
-                HStack(spacing: 15) {
-                    Circle().fill(Color.white).frame(width: 6, height: 6)
-                    Circle().fill(Color.white).frame(width: 6, height: 6)
-                }
-                .offset(y: bounce ? -2 : 2)
+            // 宠物核心渲染组
+            Group {
+                // 背景气场
+                Circle()
+                    .fill(Color.blue.opacity(0.15))
+                    .frame(width: 80, height: 80)
+                    .blur(radius: model.isDocked ? 5 : 0)
                 
-                RoundedRectangle(cornerRadius: 20)
-                    .fill(LinearGradient(colors: [.cyan, .blue], startPoint: .top, endPoint: .bottom))
-                    .frame(width: 50, height: 70)
-                    .shadow(radius: 3)
-            }
-            .grayscale(model.isIdle ? 1.0 : 0.0)
-            .opacity(model.isIdle ? 0.7 : 1.0)
-            .scaleEffect(model.isIdle ? 0.7 : 1.0)
-            .mask(Group {
-                if model.isIdle {
-                    Circle()
-                } else {
-                    Rectangle()
+                // 宠物主体
+                VStack(spacing: -8) {
+                    HStack(spacing: 15) {
+                        Circle().fill(Color.white).frame(width: 6, height: 6)
+                        Circle().fill(Color.white).frame(width: 6, height: 6)
+                    }
+                    
+                    RoundedRectangle(cornerRadius: 20)
+                        .fill(LinearGradient(colors: [.cyan, .blue], startPoint: .top, endPoint: .bottom))
+                        .frame(width: 50, height: 70)
+                        .shadow(radius: 3)
                 }
-            })
-            .animation(.spring(response: 0.6, dampingFraction: 0.8), value: model.isIdle)
-            .rotationEffect(.degrees(model.state == .walking ? (bounce ? 5 : -5) : 0))
+                .grayscale(model.isIdle ? 1.0 : 0.0)
+                .opacity(model.isIdle ? 0.7 : 1.0)
+                .scaleEffect(model.isIdle ? 0.7 : 1.0)
+                .mask(Group {
+                    if model.isIdle {
+                        Circle()
+                    } else {
+                        Rectangle()
+                    }
+                })
+            }
+            .drawingGroup() 
             
-            // 旧气泡粉碎效果
+            // 旧气泡粉碎效果 (静态化可以保留简单的透明度变化，但不推荐复杂位移)
             if let oldId = model.oldMessageId, shatteringId == oldId {
                 bubbleContent(text: model.oldMessage)
-                    .offset(bubbleOffset)
-                    .scaleEffect(1.2)
-                    .opacity(0)
                     .blur(radius: 10)
-                    .animation(.easeOut(duration: 0.4), value: shatteringId)
+                    .opacity(0)
             }
             
             // 当前消息气泡
@@ -58,10 +53,6 @@ struct PetView: View {
                 bubbleContent(text: model.message)
                     .id(model.messageId)
                     .offset(bubbleOffset)
-                    .transition(.asymmetric(
-                        insertion: .scale(scale: 0.8, anchor: .bottom).combined(with: .opacity),
-                        removal: .opacity.combined(with: .scale(scale: 0.9))
-                    ))
             }
         }
         .scaleEffect(model.isDocked ? 0.75 : 1.0, anchor: scaleAnchor)
@@ -71,15 +62,9 @@ struct PetView: View {
         .onChange(of: model.messageId) { newId in
             if let oldId = model.oldMessageId {
                 shatteringId = oldId
-                // 自动清理粉碎记录
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                     if shatteringId == oldId { shatteringId = nil }
                 }
-            }
-        }
-        .onAppear {
-            withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
-                bounce = true
             }
         }
     }
@@ -172,14 +157,5 @@ struct PetView: View {
         case .none:   break
         }
         return baseOffset
-    }
-
-    private var auraColor: Color {
-        guard model.isSystemAwarenessEnabled else { return .blue }
-        switch model.cpuLoadLevel {
-        case .low:    return .blue
-        case .medium: return .yellow
-        case .high:   return .red
-        }
     }
 }

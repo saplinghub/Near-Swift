@@ -3,6 +3,8 @@ import SwiftUI
 import Combine
 
 class StatusBarManager: NSObject, NSWindowDelegate, NSMenuDelegate {
+    static var shared: StatusBarManager?
+    
     private var statusItem: NSStatusItem
     private var window: NSWindow?
     private var countdownManager: CountdownManager
@@ -27,6 +29,7 @@ class StatusBarManager: NSObject, NSWindowDelegate, NSMenuDelegate {
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         
         super.init()
+        StatusBarManager.shared = self
         
         setupStatusItem()
         loadFanFrames()
@@ -184,6 +187,9 @@ class StatusBarManager: NSObject, NSWindowDelegate, NSMenuDelegate {
             button.layer?.addSublayer(layer)
             self.iconLayer = layer
             
+            // Set initial content for static state or speed = 0 cases
+            layer.contents = self.fanCGImages.first
+            
             // Create the Keyframe Animation
             let animation = CAKeyframeAnimation(keyPath: "contents")
             animation.values = self.fanCGImages
@@ -225,6 +231,12 @@ class StatusBarManager: NSObject, NSWindowDelegate, NSMenuDelegate {
         
         guard let layer = iconLayer else { return }
         
+        // 风车启用配置优先级次高：由用户手动控制开关
+        if !storageManager.isWindmillEnabled {
+            if layer.speed != 0.0 { layer.speed = 0.0 }
+            return
+        }
+        
         // 闲置状态优先级最高：彻底停止动画以解除 WindowServer 渲染压力
         if PowerStateManager.shared.isIdle {
             if layer.speed != 0.0 { layer.speed = 0.0 }
@@ -250,6 +262,12 @@ class StatusBarManager: NSObject, NSWindowDelegate, NSMenuDelegate {
         if abs(layer.speed - targetSpeed) > 0.05 {
             layer.speed = targetSpeed
         }
+    }
+    
+    /// 当设置中的风车开关发生变化时，调用此方法立即同步状态
+    func updateWindmillState() {
+        // 重置动画状态，通过传入当前的 CPU 占用重新计算速度
+        updateFanSpeed(usage: systemMonitor.cpuUsage)
     }
     
     private func updatePinnedTitle() {

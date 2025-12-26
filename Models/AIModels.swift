@@ -38,27 +38,35 @@ struct AIContentResponse: Codable {
     let startDate: String?
     let icon: String? // Added icon suggestion
 
+    static func createEmpty() -> AlmanacResponse {
+        let formatter = SharedUtils.dateFormatter(format: "yyyy-MM-dd")
+        return AlmanacResponse(
+            date: formatter.string(from: Date()),
+            lunarDate: "",
+            yi: "",
+            ji: "",
+            fortune: ""
+        )
+    }
+
     func toCountdownEvent() -> CountdownEvent? {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
+        let formatter = SharedUtils.dateFormatter(format: "yyyy-MM-dd")
         // Also support ISO format with time if AI provides it
         // For simplicity, sticking to yyyy-MM-dd or yyyy-MM-dd HH:mm 
         
         // Intelligent date parsing (simple version)
-        var targetDate: Date? = formatter.date(from: date)
+        var targetDate = formatter.date(from: date)
         if targetDate == nil {
-            formatter.dateFormat = "yyyy-MM-dd HH:mm"
-            targetDate = formatter.date(from: date)
+            targetDate = SharedUtils.dateFormatter(format: "yyyy-MM-dd HH:mm").date(from: date)
         }
         
         guard let finalTargetDate = targetDate else { return nil }
 
         let startDateValue: Date
-        formatter.dateFormat = "yyyy-MM-dd" // Reset
-        if let startDateStr = startDate, let parsedStartDate = formatter.date(from: startDateStr) {
+        if let startDateStr = startDate, let parsedStartDate = SharedUtils.dateFormatter(format: "yyyy-MM-dd").date(from: startDateStr) {
             startDateValue = parsedStartDate
         } else {
-            startDateValue = Date()
+            startDateValue = SharedUtils.now
         }
         
         // Icon parsing

@@ -7,10 +7,8 @@ class AIService: ObservableObject {
     @Published var errorMessage: String?
 
     private var cancellables = Set<AnyCancellable>()
-
     private var storageManager: StorageManager
     
-    // Default System Prompt (Static)
     static let defaultSystemPrompt = """
         你是一个智能倒计时事件解析助手。当前时间：{YEAR}年{MONTH}月{DAY}日。
 
@@ -20,23 +18,6 @@ class AIService: ObservableObject {
         3. startDate 是事件开始时间，date 是目标时间
         4. icon 必须从以下列表中选择最匹配的一个（默认为 star）：
            [star, leaf, headphones, code, gift, birthday, travel, work, anniversary, game, sports, study, shopping]
-           - 生日/纪念日 -> birthday/anniversary/gift
-           - 工作/上线 -> work/code
-           - 旅游/假期 -> travel/leaf
-           - 学习/考试 -> study/book
-
-        示例：
-        - "过年倒计时" → name:"春节倒计时🧧", startDate:现在, date:{NEXT_YEAR}-01-29 00:00, icon:"leaf"
-        - "今年的进度" → name:"{YEAR}年进度📊", startDate:{YEAR}-01-01, date:{YEAR}-12-31 23:59, icon:"star"
-        - "高考倒计时" → name:"高考加油💪", startDate:现在, date:{YEAR}-06-07 09:00, icon:"study"
-        - "下周五下午3点项目上线" → name:"项目上线🚀", startDate:现在, date:计算下周五15:00, icon:"code"
-        - "距离生日还有多久" → name:"生日快乐🎂", startDate:现在, date:今年生日或明年生日, icon:"birthday"
-
-        要求：
-        - 事件名称简洁有趣，可加emoji
-        - 自动推断合理的时间
-        - 如果是进度类（如"今年进度"），startDate设为起点时间
-        - 如果是倒计时类，startDate设为当前时间
         """
     
     init(storageManager: StorageManager) {
@@ -60,8 +41,8 @@ class AIService: ObservableObject {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.setValue("Bearer \(self.config.apiKey)", forHTTPHeaderField: "Authorization")
 
-            let calendar = Calendar.current
-            let now = Date()
+            let calendar = SharedUtils.calendar
+            let now = SharedUtils.now
             let year = String(calendar.component(.year, from: now))
             let month = String(calendar.component(.month, from: now))
             let day = String(calendar.component(.day, from: now))
@@ -82,14 +63,11 @@ class AIService: ObservableObject {
                     .replacingOccurrences(of: "{NEXT_YEAR}", with: nextYear)
             }
             
-            // Build Prompt
-            let finalUserPrompt = "解析倒计时事件：\(input)"
-
             let body: [String: Any] = [
                 "model": self.config.model,
                 "messages": [
                     ["role": "system", "content": systemPrompt],
-                    ["role": "user", "content": finalUserPrompt]
+                    ["role": "user", "content": "解析倒计时事件：\(input)"]
                 ],
                 "temperature": 0.3
             ]
@@ -105,33 +83,23 @@ class AIService: ObservableObject {
 
             URLSession.shared.dataTaskPublisher(for: request)
                 .tryMap { data, response -> Data in
-                    guard let httpResponse = response as? HTTPURLResponse else {
-                         throw URLError(.badServerResponse)
-                    }
-                    if httpResponse.statusCode != 200 {
-                        if let str = String(data: data, encoding: .utf8) {
-                            print("API Error: \(str)")
-                        }
+                    guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
                          throw URLError(.badServerResponse)
                     }
                     return data
                 }
                 .decode(type: OpenAIChatResponse.self, decoder: JSONDecoder())
-                .tryMap { response -> AIContentResponse in
+                .tryMap { response -> Data in
                     guard let content = response.choices.first?.message.content else {
-                         throw NSError(domain: "AI Error", code: -1, userInfo: [NSLocalizedDescriptionKey: "No content in response"])
+                         throw NSError(domain: "AI Error", code: -1)
                     }
                     var cleanContent = content
                     if cleanContent.contains("```json") {
                         cleanContent = cleanContent.replacingOccurrences(of: "```json", with: "").replacingOccurrences(of: "```", with: "")
                     }
-                    
-                    guard let data = cleanContent.data(using: .utf8) else {
-                        throw NSError(domain: "AI Error", code: -2, userInfo: [NSLocalizedDescriptionKey: "Invalid string encoding"])
-                    }
-                    
-                    return try JSONDecoder().decode(AIContentResponse.self, from: data)
+                    return cleanContent.data(using: .utf8) ?? Data()
                 }
+                .decode(type: AIContentResponse.self, decoder: JSONDecoder())
                 .map { $0.toCountdownEvent() }
                 .receive(on: DispatchQueue.main)
                 .sink(
@@ -151,7 +119,6 @@ class AIService: ObservableObject {
         .eraseToAnyPublisher()
     }
     
-    // MARK: - 日志深度分析 (Log Analysis)
     func analyzeLogs(content: String, logType: String) -> AnyPublisher<String, Error> {
         isLoading = true
         errorMessage = nil
@@ -168,14 +135,7 @@ class AIService: ObservableObject {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.setValue("Bearer \(self.config.apiKey)", forHTTPHeaderField: "Authorization")
             
-            let systemPrompt = """
-            你是一个毒舌又温暖的桌面宠物日志分析助手。任务是分析用户的「\(logType)」日志。
-            规则：
-            1. 提炼用户今日的行为特征（如：高强度编码、频繁摸鱼、经常忘记喝水等）。
-            2. 用调侃且拟人化的语气给出一段 30 字以内的总结。
-            3. 总结中要包含对该行为的点评，并为周报积累一条关键素材。
-            """
-            
+            let systemPrompt = "你是一个桌宠助手，请分析用户的「\(logType)」日志并给出 30 字以内的毒舌点评。"
             let body: [String: Any] = [
                 "model": self.config.model,
                 "messages": [
@@ -185,36 +145,23 @@ class AIService: ObservableObject {
                 "temperature": 0.5
             ]
             
-            do {
-                request.httpBody = try JSONSerialization.data(withJSONObject: body)
-            } catch {
+            do { request.httpBody = try JSONSerialization.data(withJSONObject: body) } catch {
                 self.isLoading = false
                 promise(.failure(error))
                 return
             }
             
             URLSession.shared.dataTaskPublisher(for: request)
-                .tryMap { data, response -> Data in
-                    guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-                        throw URLError(.badServerResponse)
-                    }
-                    return data
-                }
+                .tryMap { data, _ in data }
                 .decode(type: OpenAIChatResponse.self, decoder: JSONDecoder())
-                .tryMap { response -> String in
-                    return response.choices.first?.message.content ?? "分析失败"
-                }
+                .map { $0.choices.first?.message.content ?? "分析失败" }
                 .receive(on: DispatchQueue.main)
                 .sink(
                     receiveCompletion: { completion in
                         self.isLoading = false
-                        if case .failure(let error) = completion {
-                            promise(.failure(error))
-                        }
+                        if case .failure(let error) = completion { promise(.failure(error)) }
                     },
-                    receiveValue: { result in
-                        promise(.success(result))
-                    }
+                    receiveValue: { result in promise(.success(result)) }
                 )
                 .store(in: &self.cancellables)
         }
@@ -222,35 +169,15 @@ class AIService: ObservableObject {
     }
 
     func testConnection() -> AnyPublisher<Bool, Never> {
-        isLoading = true
-        errorMessage = nil
-
-        return Future<Bool, Never> { promise in
-            self.parseCountdown(input: "测试倒计时")
-                .sink(
-                    receiveCompletion: { _ in
-                        self.isLoading = false
-                    },
-                    receiveValue: { _ in
-                        promise(.success(true))
-                    }
-                )
-                .store(in: &self.cancellables)
-        }
-        .eraseToAnyPublisher()
+        return parseCountdown(input: "测试")
+            .map { _ in true }
+            .replaceError(with: false)
+            .receive(on: DispatchQueue.main)
+            .eraseToAnyPublisher()
     }
     
-    // MARK: - Almanac (Huangli)
     func fetchAlmanac(date: Date) -> AnyPublisher<AlmanacResponse, Error> {
-        // Cache Key
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        let dateString = formatter.string(from: date)
-        
-        // Return cached if available (avoiding extra AI calls)
-        // Note: For now, I'll rely on the caller to handle caching or just always fetch if explicit.
-        // User asked for "Refresh" button, so we should support fetch.
-        
+        let dateStr = SharedUtils.dateFormatter(format: "yyyy-MM-dd").string(from: date)
         isLoading = true
         errorMessage = nil
         
@@ -266,72 +193,35 @@ class AIService: ObservableObject {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.setValue("Bearer \(self.config.apiKey)", forHTTPHeaderField: "Authorization")
             
-            let systemPrompt = """
-            你是一个专业的中国传统黄历和运势助手。今天是 \(dateString)。
-            请返回今天的黄历信息，内容要符合中国传统黄历习惯。
-            JSON格式：
-            {
-                "date": "\(dateString)",
-                "lunarDate": "农历xx月xx (如：腊月初八)",
-                "yi": "宜：嫁娶、出行、祈福、开业等 (4-5项，用顿号分隔)",
-                "ji": "忌：动土、安葬、破土、诸事不宜等 (4-5项，用顿号分隔)",
-                "fortune": "今日运势详解 (2-3句话，包含事业、感情或健康方面的建议，语气积极温暖)"
-            }
-            不要包含markdown格式，只返回纯JSON。
-            """
-            
+            let systemPrompt = "你是一个专业的中国传统黄历助手。今天是 \(dateStr)。请返回 JSON：{\"date\":\"\(dateStr)\",\"lunarDate\":\"...\",\"yi\":\"...\",\"ji\":\"...\",\"fortune\":\"...\"}"
             let body: [String: Any] = [
                 "model": self.config.model,
-                "messages": [
-                    ["role": "system", "content": systemPrompt],
-                    ["role": "user", "content": "请生成今日黄历"]
-                ],
-                "temperature": 0.7 // Slightly creative for fortune
+                "messages": [["role": "system", "content": systemPrompt], ["role": "user", "content": "生成今日黄历"]],
+                "temperature": 0.7
             ]
             
-            do {
-                request.httpBody = try JSONSerialization.data(withJSONObject: body)
-            } catch {
+            do { request.httpBody = try JSONSerialization.data(withJSONObject: body) } catch {
                 self.isLoading = false
                 promise(.failure(error))
                 return
             }
             
             URLSession.shared.dataTaskPublisher(for: request)
-                .tryMap { data, response -> Data in
-                    guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-                        throw URLError(.badServerResponse)
-                    }
-                    return data
-                }
+                .tryMap { $0.data }
                 .decode(type: OpenAIChatResponse.self, decoder: JSONDecoder())
-                .tryMap { response -> AlmanacResponse in
-                    guard let content = response.choices.first?.message.content else {
-                         throw NSError(domain: "AI Error", code: -1)
-                    }
-                    var cleanContent = content
-                    if cleanContent.contains("```json") {
-                        cleanContent = cleanContent.replacingOccurrences(of: "```json", with: "").replacingOccurrences(of: "```", with: "")
-                    }
-                    
-                    guard let data = cleanContent.data(using: .utf8) else {
-                        throw NSError(domain: "AI Error", code: -2)
-                    }
-                    
-                    return try JSONDecoder().decode(AlmanacResponse.self, from: data)
+                .tryMap { response -> Data in
+                    let content = response.choices.first?.message.content ?? ""
+                    let clean = content.replacingOccurrences(of: "```json", with: "").replacingOccurrences(of: "```", with: "")
+                    return clean.data(using: .utf8) ?? Data()
                 }
+                .decode(type: AlmanacResponse.self, decoder: JSONDecoder())
                 .receive(on: DispatchQueue.main)
                 .sink(
                     receiveCompletion: { completion in
                         self.isLoading = false
-                        if case .failure(let error) = completion {
-                            self.errorMessage = "黄历获取失败: \(error.localizedDescription)"
-                            promise(.failure(error))
-                        }
+                        if case .failure(let error) = completion { promise(.failure(error)) }
                     },
-                    receiveValue: { almanac in
-                        promise(.success(almanac))
-                    }
+                    receiveValue: { promise(.success($0)) }
                 )
                 .store(in: &self.cancellables)
         }
