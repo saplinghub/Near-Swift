@@ -10,6 +10,7 @@ struct ContentView: View {
     
     @State private var showingAddView = false
     @State private var showingSettingsView = false
+    @State private var editingCountdown: CountdownEvent? = nil
     @State private var selectedTopTab = 0 // "In Progress" vs "Completed"
     @State private var selectedBottomTab = 0 // "Events", "Calendar", etc.
 
@@ -83,6 +84,7 @@ struct ContentView: View {
                         Spacer()
                         CollapsibleFab(action: {
                             withAnimation(.spring()) {
+                                editingCountdown = nil
                                 showingAddView = true
                             }
                         })
@@ -111,10 +113,13 @@ struct ContentView: View {
                 Color.black.opacity(0.2)
                     .edgesIgnoringSafeArea(.all)
                     .onTapGesture {
-                        withAnimation { showingAddView = false }
+                        withAnimation { 
+                            showingAddView = false
+                            editingCountdown = nil
+                        }
                     }
                 
-                AddCountdownView(isPresented: $showingAddView)
+                AddCountdownView(isPresented: $showingAddView, editingEvent: editingCountdown)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(Color.nearBackgroundEnd) // Ensure background
                     .cornerRadius(16) // Match window corner
@@ -183,7 +188,10 @@ struct ContentView: View {
                         }
                         .padding(.leading, 4)
                         
-                        CountdownCardView(countdown: pinned)
+                        CountdownCardView(countdown: pinned, onEdit: {
+                            editingCountdown = pinned
+                            showingAddView = true
+                        })
                     }
                     .padding(.bottom, 12)
                 }
@@ -193,7 +201,10 @@ struct ContentView: View {
                         .padding(.top, 100)
                 } else if !countdownManager.activeCountdowns.isEmpty {
                     ForEach(countdownManager.activeCountdowns) { countdown in
-                        CountdownCardView(countdown: countdown)
+                        CountdownCardView(countdown: countdown, onEdit: {
+                            editingCountdown = countdown
+                            showingAddView = true
+                        })
                             .onDrag {
                                 let idString = countdown.uuidString
                                 return NSItemProvider(object: idString as NSString)

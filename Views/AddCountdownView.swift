@@ -4,15 +4,12 @@ import Combine
 struct AddCountdownView: View {
     @Binding var isPresented: Bool
     @EnvironmentObject var countdownManager: CountdownManager
-    @EnvironmentObject var aiService: AIService 
+    @EnvironmentObject var aiService: AIService
+    var editingEvent: CountdownEvent? = nil
     
     @State private var name: String = ""
     @State private var startDate = Date()
     @State private var targetDate = Date()
-    @State private var startHour = 0
-    @State private var startMinute = 0
-    @State private var targetHour = 0
-    @State private var targetMinute = 0
     @State private var selectedIcon: IconType = .star
     
     @State private var aiInput: String = ""
@@ -43,7 +40,7 @@ struct AddCountdownView: View {
                 
                 Spacer()
                 
-                Text("新建倒计时")
+                Text(editingEvent == nil ? "新建倒计时" : "编辑倒计时")
                     .font(.system(size: 18, weight: .bold))
                     .foregroundColor(.nearTextPrimary)
                 
@@ -167,8 +164,17 @@ struct AddCountdownView: View {
         )
         .cornerRadius(16)
         .onAppear {
+            if let event = editingEvent {
+                self.name = event.name
+                self.startDate = event.startDate
+                self.targetDate = event.targetDate
+                self.selectedIcon = event.icon
+            }
+            
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                isAIFocused = true
+                if editingEvent == nil {
+                    isAIFocused = true
+                }
             }
         }
     }
@@ -202,16 +208,22 @@ struct AddCountdownView: View {
     }
     
     func saveCountdown() {
-        let newCountdown = CountdownEvent(
-            id: UUID(),
+        let eventId = editingEvent?.id ?? UUID()
+        let event = CountdownEvent(
+            id: eventId,
             name: name,
             startDate: startDate,
             targetDate: targetDate,
             icon: selectedIcon,
-            isPinned: false,
-            order: 0
+            isPinned: editingEvent?.isPinned ?? false,
+            order: editingEvent?.order ?? 0
         )
-        countdownManager.addCountdown(newCountdown)
+        
+        if editingEvent != nil {
+            countdownManager.updateCountdown(event)
+        } else {
+            countdownManager.addCountdown(event)
+        }
         isPresented = false
     }
 }

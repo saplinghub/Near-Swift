@@ -3,6 +3,7 @@ import SwiftUI
 struct CountdownCardView: View {
     @EnvironmentObject var countdownManager: CountdownManager
     let countdown: CountdownEvent
+    var onEdit: (() -> Void)? = nil
     @State private var isHovered = false
 
     var body: some View {
@@ -29,25 +30,58 @@ struct CountdownCardView: View {
 
                     Spacer()
 
-                    Text(countdown.dateString)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(.nearTextSecondary)
+                    Button(action: {
+                        if !countdown.isCompleted {
+                            onEdit?()
+                        }
+                    }) {
+                        Text(countdown.dateString)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(.nearTextSecondary)
+                            .padding(4)
+                            .background(isHovered && !countdown.isCompleted ? Color.nearPrimary.opacity(0.1) : Color.clear)
+                            .cornerRadius(4)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(countdown.isCompleted)
                 }
 
-                // 时间详情
-                HStack(spacing: 3) {
-                    Text("\(countdown.daysRemaining)")
-                        .font(.system(size: 18, weight: .heavy))
-                        .foregroundColor(.nearTextPrimary)
+                // 时间详情 - 区分展示进行中（剩余）与已结束（历时）
+                HStack(alignment: .lastTextBaseline, spacing: 3) {
+                    if countdown.isCompleted {
+                        Text("历时")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(.nearTextSecondary)
+                            .padding(.bottom, 2)
 
-                    Text("天")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundColor(.nearTextSecondary)
+                        Text("\(countdown.totalDays)")
+                            .font(.system(size: 18, weight: .heavy))
+                            .foregroundColor(.nearTextPrimary)
 
-                    Text(countdown.timeRemainingString)
-                        .font(.system(size: 11))
-                        .foregroundColor(.nearTextSecondary)
-                        .opacity(0.8)
+                        Text("天")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundColor(.nearTextSecondary)
+                    } else {
+                        if countdown.daysRemaining > 0 {
+                            Text("剩余")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundColor(.nearTextSecondary)
+                                .padding(.bottom, 2)
+
+                            Text("\(countdown.daysRemaining)")
+                                .font(.system(size: 18, weight: .heavy))
+                                .foregroundColor(.nearTextPrimary)
+
+                            Text("天")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundColor(.nearTextSecondary)
+                                .padding(.trailing, 4)
+                        } else {
+                            Text(countdown.timeRemainingString)
+                                .font(.system(size: 16, weight: .bold))
+                                .foregroundColor(.nearPrimary)
+                        }
+                    }
 
                     Spacer()
                 }

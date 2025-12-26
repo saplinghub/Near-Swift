@@ -95,7 +95,7 @@ struct CalendarView: View {
                             Text(almanac.date)
                                 .font(.system(size: 24, weight: .bold))
                                 .foregroundColor(.nearTextPrimary)
-                            Text("农历 " + almanac.lunarDate)
+                            Text(LunarCalendar.getLunarDateString(for: Date()))
                                 .font(.system(size: 16))
                                 .foregroundColor(.nearTextSecondary)
                             

@@ -249,13 +249,17 @@ class StatusBarManager: NSObject, NSWindowDelegate, NSMenuDelegate {
     private func updatePinnedTitle() {
         guard let button = statusItem.button else { return }
         
-        // Find first pinned countdown
-        // Prioritize active, then completed? Usually only active matters for "days remaining" usage.
         if let pinned = countdownManager.pinnedCountdown {
-            let days = Calendar.current.dateComponents([.day], from: Date(), to: pinned.targetDate).day ?? 0
-            // Format: " 5天"
-            // Just simple "X天" as per Tauri
-            button.title = " \(days)天" 
+            if pinned.isCompleted {
+                button.title = ""
+                // 异步处理，避免在更新 UI 时修改数据导致的刷新循环
+                DispatchQueue.main.async {
+                    self.countdownManager.unpinIfExpired(id: pinned.id)
+                }
+            } else {
+                let days = pinned.daysRemaining
+                button.title = " \(days)天" 
+            }
         } else {
             button.title = ""
         }

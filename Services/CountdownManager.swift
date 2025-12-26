@@ -108,6 +108,16 @@ class CountdownManager: ObservableObject {
         }
     }
 
+    func unpinIfExpired(id: UUID) {
+        if let index = countdowns.firstIndex(where: { $0.id == id }) {
+            if countdowns[index].isCompleted && countdowns[index].isPinned {
+                countdowns[index].isPinned = false
+                storageManager.syncAll(countdowns)
+                updateFilteredCountdowns()
+            }
+        }
+    }
+
     func reorderCountdowns(fromOffsets source: IndexSet, toOffset destination: Int) {
         countdowns.move(fromOffsets: source, toOffset: destination)
         for (index, countdown) in countdowns.enumerated() {

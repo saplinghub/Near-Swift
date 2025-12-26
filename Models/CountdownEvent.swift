@@ -61,6 +61,18 @@ struct CountdownEvent: Identifiable, Codable, Hashable {
         }
     }
 
+    var totalDays: Int {
+        let components = Calendar.current.dateComponents([.day], from: startDate, to: targetDate)
+        // 包含起始天和结束天，通常习惯 +1
+        return (components.day ?? 0) + 1
+    }
+
+    var dateRangeString: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "M月d日"
+        return "\(formatter.string(from: startDate)) ~ \(formatter.string(from: targetDate))"
+    }
+
     var dateString: String {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"

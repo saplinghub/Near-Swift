@@ -29,7 +29,23 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
     
     // 天气感知状态
     private var lastWeatherPromptDate: String = "" // YYYY-MM-DD
+    private var lastWeatherAckTime: Date = .distantPast
+    private var isWeatherAckedToday: Bool = false
     private var lastWeatherConditions: (temp: Int, text: String)? = nil
+    
+    // 通知计时器：用于频率控制
+    private var lastNotificationTimes: [String: Date] = [:]
+    
+    // 通知等级定义
+    enum NotificationLevel: Int {
+        case critical = 1 // 健康提醒、气象灾害
+        case important = 2 // 每日天气、固定日程
+        case normal = 3 // 自由交互、系统负载
+    }
+    
+    enum NotificationType: String {
+        case health, interaction, fun, system, weather
+    }
     
     override private init() {
         super.init()
@@ -130,7 +146,7 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
                 quotes = ["哇！电脑要爆炸啦，快休息下！", "好烫好烫，你在跑仿真吗？", "我的光环都变红了，冷静点！"]
             }
             
-            saySomething(quotes.randomElement()!)
+            notify(quotes.randomElement()!, level: .normal, type: .system)
             lastNotifiedLevel = currentLevel
             model.lastSystemQuoteTime = now
         }
@@ -162,7 +178,7 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
             }
             
             if let q = quote {
-                saySomething(q)
+                notify(q, level: .normal, type: .interaction)
                 lastIntentTime = now
                 return
             }
@@ -170,12 +186,12 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
         
         // 2. 复杂场景：活跃度与停留时间感知
         if intent.inputFrequency > 100 { // 高频输入（奋笔疾书）
-            saySomething(["主人手速惊人！我已经看呆了", "这就是传说中的盲打吗？强！"].randomElement()!)
+            notify(["主人手速惊人！我已经看呆了", "这就是传说中的盲打吗？强！"].randomElement()!, level: .normal, type: .interaction)
             lastIntentTime = now
         } else if intent.inputFrequency == 0 && now.timeIntervalSince(lastIntentTime) > 600.0 { // 长时间发呆
              // 复杂操作通过 AI 模拟读心（这里模拟 AI 判断）
              let stayQuote = ["盯——这个页面盯着好久了，是在思考人生吗？", "发呆也是一种修行呢...", "主人掉线了吗？歪？"].randomElement()!
-             saySomething(stayQuote)
+             notify(stayQuote, level: .normal, type: .interaction)
              lastIntentTime = now
         }
     }
@@ -192,7 +208,7 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
         if hour == 17 && minute >= 30 && minute <= 35 {
             if !isDailySummaryShown {
                 let summary = HealthManager.shared.generateDailySummary()
-                saySomething(summary, duration: 15.0) 
+                notify(summary, level: .critical, type: .health, duration: 15.0) 
                 isDailySummaryShown = true
             }
         } else if hour == 0 {
@@ -224,7 +240,7 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
                 self?.model.actions = []
             }
         ]
-        saySomething("主人忙了好久了，喝杯暖水休息一下吧？💧", duration: 10.0)
+        notify("主人忙了好久了，喝杯暖水休息一下吧？💧", level: .critical, type: .health, duration: 10.0)
     }
     
     /// 调试接口：手动触发健康提醒测试
@@ -243,7 +259,7 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
                     self?.model.actions = []
                 }
             ]
-            saySomething("主人站起来伸个腰吧？久坐对身体不好哦~ 🧘‍♀️", duration: 10.0)
+            notify("主人站起来伸个腰吧？久坐对身体不好哦~ 🧘‍♀️", level: .critical, type: .health, duration: 10.0)
         }
     }
     
@@ -257,17 +273,38 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
         let todayStr = formatter.string(from: now)
         
         // 1. 每日首次使用电脑时的天气提醒 (带按钮)
-        if lastWeatherPromptDate != todayStr {
+        let isNewDay = lastWeatherPromptDate != todayStr
+        let cooldown: TimeInterval = 1800 // 30分钟重新提醒
+        
+        if isNewDay || (!isWeatherAckedToday && now.timeIntervalSince(lastWeatherAckTime) > cooldown) {
+            if isNewDay { isWeatherAckedToday = false }
+            
             let greeting = getTimeAwareGreeting()
-            let info = "\(greeting)！今天天气「\(weather.text)」，气温 \(weather.temp)°C。记得添衣或是带伞哦~ ☁️"
+            var advice = "记得添衣或是带伞哦~" // 兜底
+            
+            // 使用生活指数提供更人性化的建议
+            if let weatherData = WeatherService.shared.weather {
+                let indices = weatherData.indices
+                // type 1: 穿衣, 3: 紫外线, 8: 舒适度
+                if let cloth = indices.first(where: { $0.type == "1" }) {
+                    advice = cloth.text.replacingOccurrences(of: "建议", with: "听说今日")
+                } else if let comf = indices.first(where: { $0.type == "8" }) {
+                    advice = "外面\(comf.category)，\(comf.text)"
+                }
+            }
+            
+            let info = "\(greeting)！今天天气「\(weather.text)」，\(advice) ☁️"
             model.actions = [
                 PetAction(id: "weather_ack", title: "朕知道了", color: .nearPrimary) { [weak self] in
+                    self?.isWeatherAckedToday = true
                     self?.lastWeatherPromptDate = todayStr
                     self?.saySomething("好哒，那我就不打扰主人啦！", duration: 3.0)
                     self?.model.actions = []
                 }
             ]
-            saySomething(info, duration: 15.0)
+            notify(info, level: .important, type: .weather, duration: 15.0) // 这种长消息且带按钮的，保持长一点或根据逻辑消失
+            lastWeatherAckTime = now
+            lastWeatherPromptDate = todayStr
         }
         
         // 2. 天气剧变监测 (无按钮)
@@ -283,7 +320,7 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
             }
             
             if let msg = burstMsg {
-                saySomething(msg) // 纯提示消息，不带按钮
+                notify(msg, level: .important, type: .weather) // 纯提示消息，不带按钮
             }
         }
         
@@ -438,7 +475,7 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
             if dist < 2.0 {
                 self.stopWalking()
                 if Double.random(in: 0...1) > 0.6 {
-                    self.saySomething(self.randomQuotes.randomElement() ?? "散步真开心~")
+                    self.notify(self.randomQuotes.randomElement() ?? "散步真开心~", level: .normal, type: .fun)
                 }
             } else {
                 win.setFrameOrigin(CGPoint(x: curr.x + (dx/dist)*1.0, y: curr.y + (dy/dist)*1.0))
@@ -455,6 +492,34 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
     }
     
     private let randomQuotes = ["今天也要加油呀~", "我在巡逻呢！", "这边的风景不错", "感觉自己萌萌哒", "想喝奶茶了...", "你在忙吗？"]
+    
+    func notify(_ text: String, level: NotificationLevel = .normal, type: NotificationType = .interaction, duration: TimeInterval? = nil) {
+        let now = Date()
+        let typeKey = type.rawValue
+        let lastTime = lastNotificationTimes[typeKey] ?? .distantPast
+        
+        // 基础冷却时间 (秒)
+        var baseCD: TimeInterval = 0
+        switch level {
+        case .critical:  baseCD = 5.0   // 一级通知几乎无抑制
+        case .important: baseCD = 300.0 // 二级通知 5 分钟
+        case .normal:    baseCD = 600.0 // 三级通知 10 分钟
+        }
+        
+        // 贴边缩起抑制逻辑
+        if model.isDocked && level.rawValue > 1 {
+            // 贴边时，非紧急通知冷却时间延长 3-5 倍
+            let multiplier: Double = level == .important ? 3.0 : 5.0
+            baseCD *= multiplier
+        }
+        
+        // 冷却检查
+        guard now.timeIntervalSince(lastTime) >= baseCD else { return }
+        
+        // 执行提醒
+        saySomething(text, duration: duration)
+        lastNotificationTimes[typeKey] = now
+    }
     
     func saySomething(_ text: String, duration: TimeInterval? = nil) {
         // 默认逻辑：如果不是主动设置了交互 actions，则清空按钮
@@ -479,8 +544,9 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
         model.message = text
         model.messageId = UUID()
         
-        // 根据字数计算时间：每个字 0.1s + 基础 1.5s，最长 5s
-        let displayDuration = duration ?? min(5.0, 1.5 + Double(text.count) * 0.15)
+        // 根据字数计算时间：默认 5 秒内
+        let baseDuration = 1.5 + Double(text.count) * 0.1
+        let displayDuration = duration ?? min(5.0, baseDuration)
         
         withAnimation { model.isMessageVisible = true }
         
