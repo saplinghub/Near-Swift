@@ -150,6 +150,76 @@ class AIService: ObservableObject {
         }
         .eraseToAnyPublisher()
     }
+    
+    // MARK: - 日志深度分析 (Log Analysis)
+    func analyzeLogs(content: String, logType: String) -> AnyPublisher<String, Error> {
+        isLoading = true
+        errorMessage = nil
+        
+        return Future<String, Error> { promise in
+            guard let url = URL(string: "\(self.config.baseURL)/chat/completions") else {
+                self.isLoading = false
+                promise(.failure(NSError(domain: "Invalid URL", code: 0)))
+                return
+            }
+            
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue("Bearer \(self.config.apiKey)", forHTTPHeaderField: "Authorization")
+            
+            let systemPrompt = """
+            你是一个毒舌又温暖的桌面宠物日志分析助手。任务是分析用户的「\(logType)」日志。
+            规则：
+            1. 提炼用户今日的行为特征（如：高强度编码、频繁摸鱼、经常忘记喝水等）。
+            2. 用调侃且拟人化的语气给出一段 30 字以内的总结。
+            3. 总结中要包含对该行为的点评，并为周报积累一条关键素材。
+            """
+            
+            let body: [String: Any] = [
+                "model": self.config.model,
+                "messages": [
+                    ["role": "system", "content": systemPrompt],
+                    ["role": "user", "content": "请分析日志：\n\(content.prefix(3000))"]
+                ],
+                "temperature": 0.5
+            ]
+            
+            do {
+                request.httpBody = try JSONSerialization.data(withJSONObject: body)
+            } catch {
+                self.isLoading = false
+                promise(.failure(error))
+                return
+            }
+            
+            URLSession.shared.dataTaskPublisher(for: request)
+                .tryMap { data, response -> Data in
+                    guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+                        throw URLError(.badServerResponse)
+                    }
+                    return data
+                }
+                .decode(type: OpenAIChatResponse.self, decoder: JSONDecoder())
+                .tryMap { response -> String in
+                    return response.choices.first?.message.content ?? "分析失败"
+                }
+                .receive(on: DispatchQueue.main)
+                .sink(
+                    receiveCompletion: { completion in
+                        self.isLoading = false
+                        if case .failure(let error) = completion {
+                            promise(.failure(error))
+                        }
+                    },
+                    receiveValue: { result in
+                        promise(.success(result))
+                    }
+                )
+                .store(in: &self.cancellables)
+        }
+        .eraseToAnyPublisher()
+    }
 
     func testConnection() -> AnyPublisher<Bool, Never> {
         isLoading = true

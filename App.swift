@@ -33,6 +33,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             systemMonitor: systemMonitor
         )
 
+        // 启动桌宠
+        PetManager.shared.showPet()
+
         print("AppDelegate setup completed")
     }
 }

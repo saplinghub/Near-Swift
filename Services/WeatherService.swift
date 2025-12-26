@@ -2,6 +2,7 @@ import Foundation
 import Combine
 
 class WeatherService: ObservableObject {
+    static let shared = WeatherService()
     @Published var weather: WeatherData?
     @Published var isLoading = false
     @Published var errorMessage: String?

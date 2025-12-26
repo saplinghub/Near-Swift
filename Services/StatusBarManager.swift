@@ -23,7 +23,7 @@ class StatusBarManager: NSObject, NSWindowDelegate, NSMenuDelegate {
         self.aiService = aiService
         self.storageManager = storageManager
         self.systemMonitor = systemMonitor
-        self.weatherService = WeatherService()
+        self.weatherService = WeatherService.shared
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         
         super.init()
@@ -36,10 +36,8 @@ class StatusBarManager: NSObject, NSWindowDelegate, NSMenuDelegate {
         // Initial Sync
         updatePinnedTitle()
         
-        // Show window on launch (Visibility Fix)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            self.showWindow()
-        }
+        // Initial Sync
+        updatePinnedTitle()
     }
     
     private func setupStatusItem() {

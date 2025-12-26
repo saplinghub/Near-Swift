@@ -20,7 +20,17 @@ struct SettingsView: View {
     @State private var isSearching = false
     @State private var weatherTestMessage: String?
     @State private var isTestingWeather = false
-    @State private var selectedTab: Int = 0 // 0: App, 1: AI, 2: Weather
+    @State private var selectedTab: Int = 0 // 0: App, 1: AI, 2: Weather, 3: Pet
+    
+    // Pet Settings
+    @State private var isPetSelfAwarenessEnabled: Bool = true
+    @State private var isPetSystemAwarenessEnabled: Bool = true
+    @State private var isPetIntentAwarenessEnabled: Bool = true
+    @State private var isHealthReminderEnabled: Bool = true
+    @State private var isAccessibilityGranted: Bool = false
+    
+    // Save Feedback
+    @State private var saveFeedbackMessage: String? = nil
     
     @State private var showExpandedEditor = false
     @AppStorage("isDebugMode") private var isDebugMode = false
@@ -38,7 +48,9 @@ struct SettingsView: View {
                         Text("设置")
                             .font(.system(size: 24, weight: .bold))
                             .foregroundColor(.nearTextPrimary)
+                        
                         Spacer()
+                        
                         Button(action: { isPresented = false }) {
                             Image(systemName: "xmark.circle.fill")
                                 .font(.system(size: 24))
@@ -49,7 +61,7 @@ struct SettingsView: View {
                     .padding(.bottom, 10)
 
                     // Tab Picker
-                    NearTabPicker(items: isDebugMode ? ["通用", "AI 配置", "天气", "日志"] : ["通用", "AI 配置", "天气"], selection: $selectedTab)
+                    NearTabPicker(items: isDebugMode ? ["通用", "AI 配置", "天气", "桌宠", "日志"] : ["通用", "AI 配置", "天气", "桌宠"], selection: $selectedTab)
                         .padding(.bottom, 10)
 
                     if selectedTab == 0 {
@@ -58,7 +70,9 @@ struct SettingsView: View {
                         aiConfigSection
                     } else if selectedTab == 2 {
                         weatherConfigSection
-                    } else if isDebugMode && selectedTab == 3 {
+                    } else if selectedTab == 3 {
+                        petSettingsSection
+                    } else if isDebugMode && selectedTab == 4 {
                         debugLogSection
                     }
                 }
@@ -82,6 +96,41 @@ struct SettingsView: View {
                     .transition(.scale(scale: 0.95).combined(with: .opacity))
                     .zIndex(100)
             }
+            
+            // Modern Glassmorphism Toast Notification
+            if let message = saveFeedbackMessage {
+                HStack(spacing: 16) {
+                    ZStack {
+                        Circle()
+                            .fill(LinearGradient(colors: [.green.opacity(0.8), .mint.opacity(0.6)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                            .frame(width: 32, height: 32)
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 14, weight: .black))
+                            .foregroundColor(.white)
+                    }
+                    
+                    Text(message)
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        .foregroundStyle(LinearGradient(colors: [.primary, .primary.opacity(0.8)], startPoint: .top, endPoint: .bottom))
+                }
+                .padding(.horizontal, 24)
+                .padding(.vertical, 14)
+                .background {
+                    Capsule()
+                        .fill(.ultraThinMaterial)
+                        .shadow(color: .black.opacity(0.1), radius: 20, x: 0, y: 10)
+                }
+                .overlay {
+                    Capsule()
+                        .stroke(LinearGradient(colors: [.white.opacity(0.5), .clear], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
+                }
+                .transition(.asymmetric(
+                    insertion: .move(edge: .bottom).combined(with: .scale(scale: 0.9)).combined(with: .opacity),
+                    removal: .opacity.combined(with: .scale(scale: 1.1))
+                ))
+                .zIndex(200)
+                .offset(y: 200) // Lower center for better visibility
+            }
         }
         .onAppear {
             self.baseURL = aiService.config.baseURL
@@ -97,7 +146,17 @@ struct SettingsView: View {
             self.qWeatherKey = storageManager.qWeatherKey
             self.qWeatherHost = storageManager.qWeatherHost
             self.waqiToken = storageManager.waqiToken
+            self.isPetSelfAwarenessEnabled = storageManager.isPetSelfAwarenessEnabled
+            self.isPetSystemAwarenessEnabled = storageManager.isSystemAwarenessEnabled
+            self.isPetIntentAwarenessEnabled = storageManager.isPetIntentAwarenessEnabled
+            self.isHealthReminderEnabled = storageManager.isHealthReminderEnabled
+            self.checkAccessibilityStatus()
         }
+    }
+    
+    private func checkAccessibilityStatus() {
+        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: false]
+        isAccessibilityGranted = AXIsProcessTrustedWithOptions(options as CFDictionary)
     }
     
     @EnvironmentObject var weatherService: WeatherService
@@ -169,7 +228,21 @@ struct SettingsView: View {
         aiService.config = newConfig
         storageManager.aiConfig = newConfig
         storageManager.saveAIConfig()
-        isPresented = false
+        showSaveFeedback()
+    }
+    func savePetSettings() {
+        storageManager.savePetSettings(
+            isSelfAwareEnabled: isPetSelfAwarenessEnabled,
+            isSystemAwareEnabled: isPetSystemAwarenessEnabled,
+            isIntentAwareEnabled: isPetIntentAwarenessEnabled,
+            isHealthReminderEnabled: isHealthReminderEnabled
+        )
+        
+        storageManager.isPetSelfAwarenessEnabled = isPetSelfAwarenessEnabled
+        storageManager.isSystemAwarenessEnabled = isPetSystemAwarenessEnabled
+        storageManager.isPetIntentAwarenessEnabled = isPetIntentAwarenessEnabled
+        PetManager.shared.model.isHealthReminderEnabled = isHealthReminderEnabled
+        showSaveFeedback()
     }
 
     func saveWeatherSettings() {
@@ -178,7 +251,18 @@ struct SettingsView: View {
         storageManager.waqiToken = waqiToken
         storageManager.saveQWeatherKey()
         weatherService.fetchWeather()
-        isPresented = false
+        showSaveFeedback()
+    }
+
+    private func showSaveFeedback() {
+        withAnimation {
+            saveFeedbackMessage = "设置已保存"
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            withAnimation {
+                saveFeedbackMessage = nil
+            }
+        }
     }
     
     // MARK: - Sections
@@ -428,6 +512,166 @@ struct SettingsView: View {
             }
             .buttonStyle(.plain)
             .padding(.top, 8)
+        }
+    }
+    
+    private var petSettingsSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Image(systemName: "pawprint.fill")
+                    .foregroundColor(.nearPrimary)
+                Text("桌面宠物设置")
+                    .font(.headline)
+            }
+            
+            VStack(spacing: 0) {
+                Toggle(isOn: $isPetSelfAwarenessEnabled) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("自我意识 (随机漫步)")
+                            .font(.system(size: 14, weight: .medium))
+                        Text("开启后，它会偶尔在桌面自由散步并自言自语。")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .toggleStyle(SwitchToggleStyle(tint: .nearPrimary))
+                .padding(.vertical, 16)
+                
+                Divider()
+                
+                Toggle(isOn: $isPetSystemAwarenessEnabled) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("系统感知 (负载反馈)")
+                            .font(.system(size: 14, weight: .medium))
+                        Text("根据 CPU 负载改变光环颜色并给出贴心提醒。")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .toggleStyle(SwitchToggleStyle(tint: .nearPrimary))
+                .padding(.vertical, 16)
+                
+                Divider()
+                
+                Toggle(isOn: $isPetIntentAwarenessEnabled) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text("操作感知 (趣味互动)")
+                                .font(.system(size: 14, weight: .medium))
+                            Spacer()
+                            if isPetIntentAwarenessEnabled {
+                                Button(action: {
+                                    UserIntentMonitor.shared.openLogFolder()
+                                }) {
+                                    Label("查看日志", systemImage: "folder")
+                                        .font(.system(size: 11))
+                                        .foregroundColor(.nearPrimary)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        Text("感知应用切换与操作频率，开启拟人化调侃互动。")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .toggleStyle(SwitchToggleStyle(tint: .nearPrimary))
+                .padding(.vertical, 16)
+                
+                if isPetIntentAwarenessEnabled && !isAccessibilityGranted {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundColor(.orange)
+                            Text("需要辅助功能权限")
+                                .font(.system(size: 11, weight: .bold))
+                        }
+                        
+                        Text("为了统计操作频率以实现更精准的互动，请在系统设置中授予 Near 辅助功能权限。")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                        
+                        Button(action: {
+                            UserIntentMonitor.shared.requestAccessibility()
+                        }) {
+                            Text("去开启权限")
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundColor(.nearPrimary)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                                .background(Color.nearPrimary.opacity(0.1))
+                                .cornerRadius(6)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(12)
+                    .background(Color.orange.opacity(0.05))
+                    .cornerRadius(8)
+                    .padding(.bottom, 16)
+                }
+                
+                Divider()
+                
+                // 健康提醒设置
+                Toggle(isOn: $isHealthReminderEnabled) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("健康助手 (饮水/站立)")
+                            .font(.system(size: 14, weight: .medium))
+                        Text("每隔一小时提醒您喝水或站立，并在 17:30 提供今日健康总结。")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .toggleStyle(SwitchToggleStyle(tint: .nearPrimary))
+                .padding(.vertical, 16)
+                
+                if isHealthReminderEnabled {
+                    HStack(spacing: 12) {
+                        Button(action: { PetManager.shared.triggerTestReminder(type: "water") }) {
+                            Label("测试喝水提醒", systemImage: "drop.fill")
+                                .font(.system(size: 10))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color.blue.opacity(0.1))
+                                .cornerRadius(6)
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundColor(.blue)
+                        
+                        Button(action: { PetManager.shared.triggerTestReminder(type: "stand") }) {
+                            Label("测试站立提醒", systemImage: "figure.stand")
+                                .font(.system(size: 10))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color.green.opacity(0.1))
+                                .cornerRadius(6)
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundColor(.green)
+                        
+                        Spacer()
+                    }
+                    .padding(.bottom, 12)
+                    .padding(.leading, 4)
+                }
+            }
+            .padding(.horizontal, 16)
+            .background(Color.white)
+            .cornerRadius(12)
+            .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
+            
+            Button(action: savePetSettings) {
+                Text("保存设置")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity).frame(height: 40)
+                    .background(Color.nearPrimary).cornerRadius(10)
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 8)
+        }
+        .onAppear {
+            self.checkAccessibilityStatus()
         }
     }
     
