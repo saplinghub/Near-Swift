@@ -649,6 +649,17 @@ struct SettingsView: View {
                         .buttonStyle(.plain)
                         .foregroundColor(.green)
                         
+                        Button(action: { PowerStateManager.shared.simulateIdle(duration: 180.0) }) {
+                            Label("模拟闲置状态 (3分钟)", systemImage: "moon.stars.fill")
+                                .font(.system(size: 10))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color.purple.opacity(0.1))
+                                .cornerRadius(6)
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundColor(.purple)
+                        
                         Spacer()
                     }
                     .padding(.bottom, 12)

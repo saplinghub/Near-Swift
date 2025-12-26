@@ -225,6 +225,12 @@ class StatusBarManager: NSObject, NSWindowDelegate, NSMenuDelegate {
         
         guard let layer = iconLayer else { return }
         
+        // 闲置状态优先级最高：彻底停止动画以解除 WindowServer 渲染压力
+        if PowerStateManager.shared.isIdle {
+            if layer.speed != 0.0 { layer.speed = 0.0 }
+            return
+        }
+        
         let targetSpeed: Float
         
         if usage >= 0.8 {

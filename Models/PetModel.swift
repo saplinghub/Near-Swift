@@ -42,6 +42,7 @@ class PetModel: ObservableObject {
     @Published var actions: [PetAction] = []
     
     /// 是否处于贴边缩起状态
+    @Published var isIdle: Bool = false
     @Published var isDocked: Bool = false
     @Published var dockEdge: DockEdge = .none
     

@@ -108,11 +108,17 @@ class WeatherService: ObservableObject {
     }
     
     func fetchWeather(location: String? = nil, cityName: String? = nil, force: Bool = false) {
+        // 1. 闲置抑制逻辑：如果系统处于闲置状态且不是强制刷新，则跳过请求以节省资源
+        if PowerStateManager.shared.isIdle && !force {
+            LogManager.shared.append("[WEATHER] System Idle: Skipping scheduled API update")
+            return
+        }
+
         // Cache logic: don't fetch if updated within 10 minutes unless forced
         if let lastUpdate = weather?.updateTime, !force {
             let diff = Date().timeIntervalSince(lastUpdate)
-            if diff < 60 { // 1 minute
-                LogManager.shared.append("SKIP: Weather updated \(Int(diff))s ago, skipping API call.")
+            if diff < 300 { // 5 minutes
+                LogManager.shared.append("[WEATHER] Cache Valid: Last update \(Int(diff))s ago, skipping.")
                 return
             }
         }
@@ -128,6 +134,7 @@ class WeatherService: ObservableObject {
             return
         }
         
+        LogManager.shared.append("[WEATHER] Fetching weather for \(name) (force: \(force))")
         isLoading = true
         errorMessage = nil
         
@@ -202,6 +209,9 @@ class WeatherService: ObservableObject {
                 self?.isLoading = false
                 if case .failure(let error) = completion {
                     self?.errorMessage = "核心天气抓取失败: \(error.localizedDescription)"
+                    LogManager.shared.append("[WEATHER-ERROR] All requests failed: \(error.localizedDescription)")
+                } else {
+                    LogManager.shared.append("[WEATHER-SUCCESS] All weather components updated successfully.")
                 }
             } receiveValue: { [weak self] basicRes, group2 in
                 let (nowRes, forecastRes, indicesRes, hourlyRes) = basicRes

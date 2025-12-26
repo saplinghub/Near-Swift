@@ -5,23 +5,84 @@ class LogManager: ObservableObject {
     static let shared = LogManager()
     
     @Published var logs: String = ""
+    private var cancellables = Set<AnyCancellable>()
     
     private let formatter: DateFormatter = {
         let f = DateFormatter()
-        f.dateFormat = "HH:mm:ss.SSS"
+        f.dateFormat = "yyyy-MM-dd HH:mm:ss.SSS"
         return f
     }()
     
-    private init() {}
+    private let fileDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
+    
+    private var logDirectory: URL {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let dir = appSupport.appendingPathComponent("Near/Logs")
+        if !FileManager.default.fileExists(atPath: dir.path) {
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        }
+        return dir
+    }
+    
+    private init() {
+        cleanupOldLogs()
+    }
     
     func append(_ message: String) {
         let timestamp = formatter.string(from: Date())
         let newEntry = "[\(timestamp)] \(message)\n"
+        
+        // 1. Memory Log (Debug UI)
         DispatchQueue.main.async {
             self.logs += newEntry
-            // Limit log size to prevent memory issues
             if self.logs.count > 100000 {
                 self.logs = String(self.logs.suffix(50000))
+            }
+        }
+        
+        // 2. Console Print
+        #if DEBUG
+        print(newEntry.trimmingCharacters(in: .newlines))
+        #endif
+        
+        // 3. File Log
+        logToFile(newEntry)
+    }
+    
+    private func logToFile(_ entry: String) {
+        let fileName = "\(fileDateFormatter.string(from: Date())).log"
+        let fileURL = logDirectory.appendingPathComponent(fileName)
+        
+        if let data = entry.data(using: .utf8) {
+            if FileManager.default.fileExists(atPath: fileURL.path) {
+                if let fileHandle = try? FileHandle(forWritingTo: fileURL) {
+                    fileHandle.seekToEndOfFile()
+                    fileHandle.write(data)
+                    fileHandle.closeFile()
+                }
+            } else {
+                try? data.write(to: fileURL)
+            }
+        }
+    }
+    
+    private func cleanupOldLogs() {
+        let now = Date()
+        let sevenDaysAgo = Calendar.current.date(byAdding: .day, value: -7, to: now)!
+        
+        guard let files = try? FileManager.default.contentsOfDirectory(at: logDirectory, includingPropertiesForKeys: [.creationDateKey]) else { return }
+        
+        for file in files where file.pathExtension == "log" {
+            if let attrs = try? FileManager.default.attributesOfItem(atPath: file.path),
+               let creationDate = attrs[.creationDate] as? Date {
+                if creationDate < sevenDaysAgo {
+                    try? FileManager.default.removeItem(at: file)
+                    print("[LOG] Cleaned up old log file: \(file.lastPathComponent)")
+                }
             }
         }
     }

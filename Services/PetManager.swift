@@ -1,6 +1,7 @@
 import Foundation
 import AppKit
 import SwiftUI
+import Combine
 
 class PetManager: NSObject, ObservableObject, NSWindowDelegate {
     static let shared = PetManager()
@@ -44,11 +45,48 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
     }
     
     enum NotificationType: String {
-        case health, interaction, fun, system, weather
+        case health, interaction, fun, system, weather, power
     }
+    
+    private var powerCancellables = Set<AnyCancellable>()
     
     override private init() {
         super.init()
+        setupPowerObservation()
+    }
+    
+    private func setupPowerObservation() {
+        PowerStateManager.shared.$isIdle
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] isIdle in
+                self?.model.isIdle = isIdle
+                if isIdle {
+                    self?.enterIdleMode()
+                } else {
+                    self?.handleIdleExit()
+                }
+            }
+            .store(in: &powerCancellables)
+    }
+    
+    private func enterIdleMode() {
+        LogManager.shared.append("[PET] Entering Idle Mode: Suspending timers and animations")
+        checkTimer?.invalidate()
+        walkTimer?.invalidate()
+        messageTimer?.invalidate()
+        withAnimation { model.isMessageVisible = false }
+    }
+    
+    private func handleIdleExit() {
+        LogManager.shared.append("[PET] Detected Idle Exit: Restoring activities")
+        startMonitoring()
+        
+        // 延迟 1-3s 触发拟人化唤醒
+        let delay = Double.random(in: 1.0...3.0)
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            let quotes = ["朕又回来啦！刚才睡得真香~", "呼... 好梦初醒，开始干活！", "捕捉到你的操作啦，我在偷懒的时候你该不会也在摸鱼吧？", "信号恢复！ Near 准备就绪。"]
+            self?.notify(quotes.randomElement() ?? "我回来啦！", level: .important, type: .power)
+        }
     }
     
     func showPet() {
@@ -514,14 +552,19 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
         }
         
         // 冷却检查
-        guard now.timeIntervalSince(lastTime) >= baseCD else { return }
+        // 豁免逻辑：如果是系统电源/唤醒通知，则不进行 CD 抑制，确保用户感知
+        if type != .power {
+            guard now.timeIntervalSince(lastTime) >= baseCD else { return }
+        }
         
         // 执行提醒
+        LogManager.shared.append("[PET-NOTIFY] Type: \(typeKey), Level: \(level.rawValue), Text: \(text)")
         saySomething(text, duration: duration)
         lastNotificationTimes[typeKey] = now
     }
     
     func saySomething(_ text: String, duration: TimeInterval? = nil) {
+        LogManager.shared.append("[PET-SAY] Text: \(text)")
         // 默认逻辑：如果不是主动设置了交互 actions，则清空按钮
         // 增加匹配范围：涵盖喝水、站立、天气问候、每日总结等必要交互
         let keywords = ["水", "腰", "站", "早", "午", "晚", "深", "知道了", "总结", "天气"]

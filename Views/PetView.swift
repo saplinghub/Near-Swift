@@ -30,6 +30,17 @@ struct PetView: View {
                     .frame(width: 50, height: 70)
                     .shadow(radius: 3)
             }
+            .grayscale(model.isIdle ? 1.0 : 0.0)
+            .opacity(model.isIdle ? 0.7 : 1.0)
+            .scaleEffect(model.isIdle ? 0.7 : 1.0)
+            .mask(Group {
+                if model.isIdle {
+                    Circle()
+                } else {
+                    Rectangle()
+                }
+            })
+            .animation(.spring(response: 0.6, dampingFraction: 0.8), value: model.isIdle)
             .rotationEffect(.degrees(model.state == .walking ? (bounce ? 5 : -5) : 0))
             
             // 旧气泡粉碎效果
