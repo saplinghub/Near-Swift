@@ -12,6 +12,7 @@ class StorageManager: ObservableObject {
     @Published var isSystemAwarenessEnabled: Bool = true // Renamed from isPetSystemAwarenessEnabled
     @Published var isPetIntentAwarenessEnabled: Bool = true
     @Published var isHealthReminderEnabled: Bool = true
+    @Published var isPetEnabled: Bool = true
     @Published var isWindmillEnabled: Bool = true
 
     private let countdownsKey = "countdowns"
@@ -25,6 +26,7 @@ class StorageManager: ObservableObject {
     private let isSystemAwarenessKey = "isSystemAwarenessEnabled" // Renamed from isPetSystemAwarenessKey
     private let isPetIntentAwarenessKey = "isPetIntentAwarenessEnabled"
     private let isHealthReminderKey = "isHealthReminderEnabled"
+    private let isPetEnabledKey = "isPetEnabled"
 
     init() {
         loadAll()
@@ -66,6 +68,7 @@ class StorageManager: ObservableObject {
         self.isSystemAwarenessEnabled = UserDefaults.standard.object(forKey: isSystemAwarenessKey) as? Bool ?? true
         self.isPetIntentAwarenessEnabled = UserDefaults.standard.object(forKey: isPetIntentAwarenessKey) as? Bool ?? true
         self.isHealthReminderEnabled = UserDefaults.standard.object(forKey: isHealthReminderKey) as? Bool ?? true
+        self.isPetEnabled = UserDefaults.standard.object(forKey: isPetEnabledKey) as? Bool ?? true
         self.isWindmillEnabled = UserDefaults.standard.object(forKey: "isWindmillEnabled") as? Bool ?? true
     }
 
@@ -77,12 +80,14 @@ class StorageManager: ObservableObject {
         UserDefaults.standard.set(waqiToken, forKey: waqiTokenPath)
     }
 
-    func savePetSettings(isSelfAwareEnabled: Bool, isSystemAwareEnabled: Bool, isIntentAwareEnabled: Bool, isHealthReminderEnabled: Bool) {
+    func savePetSettings(isEnabled: Bool, isSelfAwareEnabled: Bool, isSystemAwareEnabled: Bool, isIntentAwareEnabled: Bool, isHealthReminderEnabled: Bool) {
+        self.isPetEnabled = isEnabled
         self.isPetSelfAwarenessEnabled = isSelfAwareEnabled
         self.isSystemAwarenessEnabled = isSystemAwareEnabled
         self.isPetIntentAwarenessEnabled = isIntentAwareEnabled
         self.isHealthReminderEnabled = isHealthReminderEnabled
         
+        UserDefaults.standard.set(isEnabled, forKey: isPetEnabledKey)
         UserDefaults.standard.set(isSelfAwareEnabled, forKey: isPetSelfAwarenessKey)
         UserDefaults.standard.set(isSystemAwareEnabled, forKey: isSystemAwarenessKey)
         UserDefaults.standard.set(isIntentAwareEnabled, forKey: isPetIntentAwarenessKey)

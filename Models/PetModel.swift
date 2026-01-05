@@ -14,6 +14,31 @@ enum DockEdge {
     case none, left, right, top, bottom
 }
 
+/// 消息类型映射
+enum PetMessageType: String, Codable {
+    case system, health, power, fun, weather
+    
+    var displayName: String {
+        switch self {
+        case .system: return "系统状态"
+        case .health: return "健康提醒"
+        case .power: return "能源状态"
+        case .fun: return "日常互动"
+        case .weather: return "天气提醒"
+        }
+    }
+    
+    var iconName: String {
+        switch self {
+        case .system: return "cpu"
+        case .health: return "heart.fill"
+        case .power: return "bolt.fill"
+        case .fun: return "face.smiling"
+        case .weather: return "cloud.sun.fill"
+        }
+    }
+}
+
 /// 气泡动作指令
 struct PetAction: Identifiable {
     let id: String
@@ -34,6 +59,7 @@ class PetModel: ObservableObject {
     @Published var state: PetState = .idle
     @Published var position: CGPoint = .zero
     @Published var isVisible: Bool = true
+    @Published var isEnabled: Bool = true // 主开关：控制桌宠是否启用
     @Published var opacity: Double = PetConfig.defaultOpacity
     
     @Published var mood: Double = 1.0 // 0.0 ~ 1.0
@@ -62,7 +88,11 @@ class PetModel: ObservableObject {
     // 消息管理
     @Published var messageId: UUID = UUID()
     @Published var message: String = ""
+    @Published var messageType: PetMessageType = .fun
     @Published var isMessageVisible: Bool = false
+    
+    /// 是否正处于动画活跃状态（气泡显示或拖拽时）
+    @Published var isAnimating: Bool = false
     
     // 自由移动目标
     var walkTarget: CGPoint?

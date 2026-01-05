@@ -28,6 +28,7 @@ struct SettingsView: View {
     @State private var isPetIntentAwarenessEnabled: Bool = true
     @State private var isHealthReminderEnabled: Bool = true
     @State private var isWindmillEnabled: Bool = true
+    @State private var isPetEnabled: Bool = true
     @State private var isAccessibilityGranted: Bool = false
     
     // Save Feedback
@@ -151,6 +152,7 @@ struct SettingsView: View {
             self.isPetSystemAwarenessEnabled = storageManager.isSystemAwarenessEnabled
             self.isPetIntentAwarenessEnabled = storageManager.isPetIntentAwarenessEnabled
             self.isHealthReminderEnabled = storageManager.isHealthReminderEnabled
+            self.isPetEnabled = storageManager.isPetEnabled
             self.isWindmillEnabled = storageManager.isWindmillEnabled
             self.checkAccessibilityStatus()
         }
@@ -234,6 +236,7 @@ struct SettingsView: View {
     }
     func savePetSettings() {
         storageManager.savePetSettings(
+            isEnabled: isPetEnabled,
             isSelfAwareEnabled: isPetSelfAwarenessEnabled,
             isSystemAwareEnabled: isPetSystemAwarenessEnabled,
             isIntentAwareEnabled: isPetIntentAwarenessEnabled,
@@ -243,6 +246,7 @@ struct SettingsView: View {
         storageManager.isPetSelfAwarenessEnabled = isPetSelfAwarenessEnabled
         storageManager.isSystemAwarenessEnabled = isPetSystemAwarenessEnabled
         storageManager.isPetIntentAwarenessEnabled = isPetIntentAwarenessEnabled
+        PetManager.shared.model.isEnabled = isPetEnabled
         PetManager.shared.model.isHealthReminderEnabled = isHealthReminderEnabled
         showSaveFeedback()
     }
@@ -533,6 +537,21 @@ struct SettingsView: View {
             }
             
             VStack(spacing: 0) {
+                Toggle(isOn: $isPetEnabled) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("启用桌面宠物")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundColor(.nearPrimary)
+                        Text("开启后，Near 宠物将常驻桌面为您提供陪伴。")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .toggleStyle(SwitchToggleStyle(tint: .nearPrimary))
+                .padding(.vertical, 16)
+                
+                Divider()
+                
                 Toggle(isOn: $isPetSelfAwarenessEnabled) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("自我意识 (随机漫步)")

@@ -34,7 +34,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         )
 
         // 启动桌宠
-        PetManager.shared.showPet()
+        PetManager.shared.model.isEnabled = storageManager.isPetEnabled
+        if storageManager.isPetEnabled {
+            PetManager.shared.showPet()
+        }
 
         print("AppDelegate setup completed")
     }

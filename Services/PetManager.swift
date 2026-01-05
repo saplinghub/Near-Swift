@@ -7,12 +7,14 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
     static let shared = PetManager()
     
     @Published var model = PetModel()
-    private var window: PetWindow?
+    private var petWindow: PetWindow?
+    private var bubbleWindow: BubbleWindow?
     private var checkTimer: Timer?
     private var walkTimer: Timer?
     private var messageTimer: Timer?
     private var monitor: SystemMonitor?
     private var intentMonitor: UserIntentMonitor?
+    private var isDragging: Bool = false
     
     // 操作意图追踪
     private var lastIntentAppName: String = ""
@@ -68,6 +70,52 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
                 }
             }
             .store(in: &powerCancellables)
+            
+        // 监听开启/关闭状态
+        model.$isEnabled
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] isEnabled in
+                if isEnabled {
+                    self?.showPet()
+                } else {
+                    self?.hidePet()
+                }
+            }
+            .store(in: &powerCancellables)
+            
+        // 【新增】监听消息可见性，主动更新气泡位置与宠物动画状态
+        model.$isMessageVisible
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] isVisible in
+                // 激活动画：消息显示中
+                self?.model.isAnimating = isVisible
+                
+                if isVisible {
+                    if let petFrame = self?.petWindow?.frame {
+                        self?.bubbleWindow?.updateSizeAndPosition(relativeTo: petFrame)
+                    }
+                }
+            }
+            .store(in: &powerCancellables)
+            
+        // 【关键修复】建立 0.5s 的低频自检，确保 isAnimating 状态最终一致性
+        Timer.publish(every: 0.5, on: .main, in: .common)
+            .autoconnect()
+            .sink { [weak self] _ in
+                guard let self = self else { return }
+                
+                // 物理兜底：如果 self.isDragging 为 true 但鼠标实际并未按下（AppKit 漏掉了 mouseUp）
+                // 则强制修正 isDragging 状态
+                if self.isDragging && NSEvent.pressedMouseButtons == 0 {
+                    self.isDragging = false
+                }
+                
+                let shouldAnimate = self.model.isMessageVisible || self.isDragging
+                if self.model.isAnimating != shouldAnimate {
+                    self.model.isAnimating = shouldAnimate
+                }
+            }
+            .store(in: &powerCancellables)
     }
     
     private func enterIdleMode() {
@@ -93,21 +141,27 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
     }
     
     func showPet() {
-        guard window == nil else { return }
+        guard petWindow == nil else { return }
         
         let screenFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1024, height: 768)
-        let initialRect = NSRect(x: screenFrame.midX - 200, y: screenFrame.midY - 150, width: 400, height: 300)
+        let initialRect = NSRect(x: screenFrame.midX - 30, y: screenFrame.midY - 30, width: 60, height: 60)
         
         let petWindow = PetWindow(contentRect: initialRect, model: model)
         petWindow.delegate = self
+        
+        // 创建并绑定气泡窗口
+        let bubbleWindow = BubbleWindow(model: model)
+        petWindow.addChildWindow(bubbleWindow, ordered: .above)
+        
         petWindow.makeKeyAndOrderFront(nil)
-        self.window = petWindow
+        self.petWindow = petWindow
+        self.bubbleWindow = bubbleWindow
         
         self.monitor = SystemMonitor() // 初始化监控
         self.intentMonitor = UserIntentMonitor.shared
         
         // 启动时同步持久化设置
-        let defaults = UserDefaults.standard
+        let _ = UserDefaults.standard
         // 静态模式：停用所有非必要的后台轮询以节省资源
         self.monitor?.stopMonitoring()
         self.intentMonitor = nil // 彻底停用意图追踪
@@ -117,10 +171,32 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
     
 
     private func startMonitoring() {
-        // 静态模式：降低至 2.0s 仅用于处理边缘吸附定位
-        resetTimer(interval: 2.0)
+        // 大幅降低常驻频率：仅 1.0s 用于基础状态检查
+        resetTimer(interval: 1.0)
     }
     
+    // 暴露此方法，让 Window 在移动时主动通知
+    func handleWindowMoved() {
+        // 拖拽中激活动画
+        self.isDragging = true
+        if !model.isAnimating { model.isAnimating = true }
+        
+        // 由于使用了 addChildWindow，位移同步由系统处理
+        handleDocking(isDragging: true)
+    }
+    
+    func finishDragging() {
+        self.isDragging = false
+        // 停止拖拽后，如果没有气泡，则停止动画以省电
+        if !model.isMessageVisible { model.isAnimating = false }
+        
+        handleDocking(isDragging: false)
+        // 停止拖拽后，强制校验一次气泡位置
+        if let petFrame = petWindow?.frame {
+            bubbleWindow?.updateSizeAndPosition(relativeTo: petFrame)
+        }
+    }
+
     private func resetTimer(interval: TimeInterval) {
         checkTimer?.invalidate()
         checkTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
@@ -129,36 +205,13 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
     }
     
     private func updateState() {
-        let isDragging = NSEvent.pressedMouseButtons != 0
+        // 移除 0.1s 的高频鼠标监听，改为被动感知
+        handleSelfAwareness() 
         
-        // 1. 动态步长逻辑：如果没有任何交互且宠物处于闲置，降频至 1.0s 以节省 CPU
-        let shouldLowFreq = !isDragging && model.state == .idle && !model.isMessageVisible
-        let currentInterval = checkTimer?.timeInterval ?? 0.1
-        let targetInterval: TimeInterval = shouldLowFreq ? 1.0 : 0.1
-        
-        if abs(currentInterval - targetInterval) > 0.01 {
-            resetTimer(interval: targetInterval)
-        }
-
-        if isDragging {
-            stopWalking() 
-            handleDocking(isDragging: true)
-        } else {
-            handleDocking(isDragging: false)
-            
-            // 静态化：移除所有主动感知和自发动作
-            /*
-            handleSelfAwareness()
-            
-            let now = SharedUtils.now
-            if now.timeIntervalSince(lastDeepCheckTime) >= 2.0 {
-                updateSystemAwareness() 
-                updateIntentAwareness()
-                updateHealthReminders()
-                updateWeatherInsights()
-                lastDeepCheckTime = now
-            }
-            */
+        let now = Date()
+        if now.timeIntervalSince(lastDeepCheckTime) >= 3.0 {
+            updateSystemAwareness() 
+            lastDeepCheckTime = now
         }
     }
     
@@ -292,11 +345,11 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
         model.actions = [
             PetAction(id: "water_done", title: "喝水了", color: .blue) { [weak self] in
                 HealthManager.shared.recordActivity(type: "water")
-                self?.saySomething("好哒！主人真棒，继续保持哦~", duration: 3.0)
+                self?.saySomething(text: "好哒！主人真棒，继续保持哦~", duration: 3.0)
                 self?.model.actions = [] // 清空动作
             },
             PetAction(id: "water_later", title: "等一下", color: .gray) { [weak self] in
-                self?.saySomething("那好吧，忙完这阵千万记得喝水呀！", duration: 3.0)
+                self?.saySomething(text: "那好吧，忙完这阵千万记得喝水呀！", duration: 3.0)
                 self?.model.actions = []
             }
         ]
@@ -311,11 +364,11 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
             model.actions = [
                 PetAction(id: "stand_done", title: "站好了", color: .green) { [weak self] in
                     HealthManager.shared.recordActivity(type: "stand")
-                    self?.saySomething("活动一下筋骨舒服多了吧！☀️", duration: 3.0)
+                    self?.saySomething(text: "活动一下筋骨舒服多了吧！☀️", duration: 3.0)
                     self?.model.actions = []
                 },
                 PetAction(id: "stand_later", title: "再等会儿", color: .gray) { [weak self] in
-                    self?.saySomething("好滴，但别坐太久哦，脊椎在抱怨啦~", duration: 3.0)
+                    self?.saySomething(text: "好滴，但别坐太久哦，脊椎在抱怨啦~", duration: 3.0)
                     self?.model.actions = []
                 }
             ]
@@ -356,7 +409,7 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
                 PetAction(id: "weather_ack", title: "朕知道了", color: .nearPrimary) { [weak self] in
                     self?.isWeatherAckedToday = true
                     self?.lastWeatherPromptDate = todayStr
-                    self?.saySomething("好哒，那我就不打扰主人啦！", duration: 3.0)
+                    self?.saySomething(text: "好哒，那我就不打扰主人啦！", duration: 3.0)
                     self?.model.actions = []
                 }
             ]
@@ -429,7 +482,7 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
     }
     
     private func handleDocking(isDragging: Bool) {
-        guard let window = window else { return }
+        guard let window = petWindow else { return }
         let frame = window.frame
         let centerX = frame.origin.x + frame.width / 2
         let centerY = frame.origin.y + frame.height / 2
@@ -450,7 +503,7 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
                 }
                 
                 if wasAlreadyDocked && !shouldDock {
-                    self.saySomething(self.undockQuotes.randomElement() ?? "呼~ 被抓出来了")
+                    self.saySomething(text: self.undockQuotes.randomElement() ?? "呼~ 被抓出来了")
                 }
             }
         }
@@ -458,12 +511,14 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
         if shouldDock && !isDragging {
             autoSnapToEdge(edge: newEdge, screen: screen.frame)
             if !wasAlreadyDocked {
-                saySomething(dockQuotes.randomElement() ?? "在这儿歇会儿~")
+                saySomething(text: dockQuotes.randomElement() ?? "在这儿歇会儿~")
             }
         }
         
         if isDragging && !visibleFrame.contains(CGPoint(x: centerX, y: centerY)) {
-            pushBackToVisible(window: window, visibleFrame: visibleFrame)
+            if let window = petWindow {
+                pushBackToVisible(window: window, visibleFrame: visibleFrame)
+            }
         }
     }
     
@@ -481,7 +536,7 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
     }
     
     private func autoSnapToEdge(edge: DockEdge, screen: NSRect) {
-        guard let window = window else { return }
+        guard let window = petWindow else { return }
         var origin = window.frame.origin
         let w = window.frame.width
         let h = window.frame.height
@@ -509,7 +564,7 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
     }
     
     private func startRandomWalk() {
-        guard let window = window, let screen = window.screen else { return }
+        guard let window = petWindow, let screen = window.screen else { return }
         let s = screen.visibleFrame
         let margin: CGFloat = 150.0
         let targetX = CGFloat.random(in: (s.minX + margin)...(s.maxX - margin))
@@ -575,14 +630,26 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
             guard now.timeIntervalSince(lastTime) >= baseCD else { return }
         }
         
+        // 类型映射
+        let msgType: PetMessageType
+        switch type {
+        case .system: msgType = .system
+        case .health: msgType = .health
+        case .power: msgType = .power
+        case .fun: msgType = .fun
+        case .weather: msgType = .weather
+        case .interaction: msgType = .fun // 互动消息映射到日常互动
+        }
+        
         // 执行提醒
         LogManager.shared.append("[PET-NOTIFY] Type: \(typeKey), Level: \(level.rawValue), Text: \(text)")
-        saySomething(text, duration: duration)
+        saySomething(text: text, type: msgType, duration: duration)
         lastNotificationTimes[typeKey] = now
     }
     
-    func saySomething(_ text: String, duration: TimeInterval? = nil) {
-        LogManager.shared.append("[PET-SAY] Text: \(text)")
+    func saySomething(text: String, type: PetMessageType = .fun, duration: TimeInterval? = nil) {
+        LogManager.shared.append("[PET-SAY] Text: \(text), Type: \(type.rawValue)")
+        
         // 默认逻辑：如果不是主动设置了交互 actions，则清空按钮
         // 增加匹配范围：涵盖喝水、站立、天气问候、每日总结等必要交互
         let keywords = ["水", "腰", "站", "早", "午", "晚", "深", "知道了", "总结", "天气"]
@@ -592,6 +659,9 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
         if !isInteractive {
             model.actions = []
         }
+        
+        // 设置消息类型
+        model.messageType = type
         
         // 顶掉逻辑
         if model.isMessageVisible {
@@ -621,8 +691,11 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
         checkTimer?.invalidate()
         walkTimer?.invalidate()
         messageTimer?.invalidate()
-        window?.orderOut(nil)
-        window = nil
+        monitor?.stopMonitoring()
+        bubbleWindow?.orderOut(nil)
+        petWindow?.orderOut(nil)
+        petWindow = nil
+        bubbleWindow = nil
         model.isVisible = false
     }
     
