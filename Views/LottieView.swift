@@ -21,6 +21,10 @@ struct LottieView: NSViewRepresentable {
         
         if let path = Bundle.module.path(forResource: animationName, ofType: "json") {
             animationView.animation = LottieAnimation.filepath(path)
+        } else if let path = Bundle.main.path(forResource: animationName, ofType: "json") {
+            animationView.animation = LottieAnimation.filepath(path)
+        } else if let path = Bundle.main.path(forResource: "NearCountdown_NearCountdown.bundle/\(animationName)", ofType: "json") {
+            animationView.animation = LottieAnimation.filepath(path)
         } else {
             animationView.animation = LottieAnimation.named(animationName, bundle: .module)
         }
