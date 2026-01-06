@@ -85,10 +85,20 @@ EOF
 echo "🔗 Fixing RPATH..."
 install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP_BUNDLE/Contents/MacOS/$APP_NAME" || true
 
-# 5.2 Add Ad-hoc Code Signing (CRITICAL for macOS 12+)
-# This prevents Gatekeeper from instantly killing the process
+# 5.2 Clean Extended Attributes (IMPORTANT)
+# Prevents "App is damaged" errors due to quarantine flags
+echo "🧹 Cleaning extended attributes..."
+xattr -cr "$APP_BUNDLE"
+
+# 5.3 Add Ad-hoc Code Signing (CRITICAL for macOS 12+)
+# Use explicit recursive signing for reliability
 echo "✍️  Signing application..."
-codesign --force --deep --sign - "$APP_BUNDLE"
+if [ -d "$APP_BUNDLE/Contents/Frameworks" ]; then
+    find "$APP_BUNDLE/Contents/Frameworks" -type f -name "*.dylib" -or -name "*.framework" | while read -r lib; do
+        codesign --force --sign - "$lib"
+    done
+fi
+codesign --force --sign - "$APP_BUNDLE"
 
 # 6. Create DMG
 echo "💿 Creating DMG..."
@@ -117,4 +127,6 @@ echo "✅ Build complete!"
 echo "📦 App Bundle: $APP_BUNDLE"
 echo "💿 DMG: $DMG_PATH"
 echo ""
-echo "To install: Open the DMG and drag Near to Applications folder."
+echo "To install: Open the DMG and drag Near to /Applications folder."
+echo "⚠️  IMPORTANT: If the app fails to open after a reboot, run this command in Terminal:"
+echo "   xattr -cr /Applications/Near.app"
