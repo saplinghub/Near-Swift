@@ -15,17 +15,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var statusBarManager: StatusBarManager?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        print("AppDelegate.applicationDidFinishLaunching called")
+        Logger.shared.log("=== App Launching ===")
+        Logger.shared.log("Log path: \(Logger.shared.getLogPath())")
+        
         NSApp.setActivationPolicy(.accessory)
 
+        Logger.shared.log("Initializing storage and managers...")
         let storageManager = StorageManager()
-        // Note: CountdownManager creates its own StorageManager instance internally. 
-        // Ideally we should inject it, but for now we won't touch CountdownManager constructor 
-        // to avoid cascading changes unless needed.
         let countdownManager = CountdownManager() 
         let aiService = AIService(storageManager: storageManager)
         let systemMonitor = SystemMonitor()
 
+        Logger.shared.log("Setting up StatusBarManager...")
         statusBarManager = StatusBarManager(
             countdownManager: countdownManager,
             aiService: aiService,
@@ -34,11 +35,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         )
 
         // 启动桌宠
+        Logger.shared.log("Enabling/Disabling pet based on settings...")
         PetManager.shared.model.isEnabled = storageManager.isPetEnabled
         if storageManager.isPetEnabled {
+            Logger.shared.log("Showing Pet...")
             PetManager.shared.showPet()
         }
 
-        print("AppDelegate setup completed")
+        Logger.shared.log("=== App Launch Completed ===")
     }
 }
