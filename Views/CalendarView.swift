@@ -87,142 +87,328 @@ struct CalendarView: View {
     
     // MARK: - Almanac View
     private var almanacView: some View {
-        VStack(spacing: 20) {
+        VStack(spacing: 0) {
             if let almanac = almanac {
                 ScrollView(showsIndicators: false) {
-                    VStack(spacing: 24) {
-                        VStack(spacing: 8) {
-                            Text(almanac.date)
-                                .font(.system(size: 24, weight: .bold))
-                                .foregroundColor(.nearTextPrimary)
-                            Text(LunarCalendar.getLunarDateString(for: Date()))
-                                .font(.system(size: 16))
+                    VStack(spacing: 20) {
+                        // 1. Header Section (Main Date & Lunar Info)
+                        VStack(spacing: 16) {
+                            let components = almanac.date.split(separator: "-")
+                            if components.count == 3 {
+                                HStack(alignment: .lastTextBaseline, spacing: 4) {
+                                    Text(components[0]).font(.custom("Kaiti SC", size: 32).weight(.bold))
+                                    Text("年").font(.custom("Kaiti SC", size: 14))
+                                    Text(components[1]).font(.custom("Kaiti SC", size: 32).weight(.bold))
+                                    Text("月").font(.custom("Kaiti SC", size: 14))
+                                    Text(components[2]).font(.custom("Kaiti SC", size: 48).weight(.black))
+                                    Text("日").font(.custom("Kaiti SC", size: 14))
+                                }
+                                .foregroundColor(Color(hex: "333333"))
+                            } else {
+                                Text(almanac.date)
+                                    .font(.custom("Kaiti SC", size: 32).weight(.black))
+                                    .foregroundColor(Color(hex: "333333"))
+                            }
+                            
+                            HStack(spacing: 15) {
+                                // Red Seal Style Lunar Date
+                                Text(almanac.lunarDate)
+                                    .font(.custom("Kaiti SC", size: 14).weight(.bold))
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(
+                                        ZStack {
+                                            Rectangle().fill(Color.red.opacity(0.8))
+                                            Rectangle().stroke(Color.red, lineWidth: 1).offset(x: 1, y: 1)
+                                        }
+                                    )
+                                    .foregroundColor(.white)
+                                    .rotationEffect(.degrees(-2)) // Slight tilt for hand-stamped look
+                                
+                                Text(almanac.weekday)
+                                    .font(.custom("Kaiti SC", size: 14))
+                                    .foregroundColor(.nearSecondary)
+                            }
+                            
+                            Text(almanac.ganZhi)
+                                .font(.custom("Kaiti SC", size: 18))
                                 .foregroundColor(.nearTextSecondary)
+                            
+                            if !almanac.chongSha.isEmpty {
+                                Text(almanac.chongSha)
+                                    .font(.custom("Kaiti SC", size: 13).weight(.bold))
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 4)
+                                    .border(Color.red.opacity(0.3), width: 1)
+                                    .foregroundColor(.red)
+                            }
                             
                             // Integrated Weather Info
                             if let weather = weatherService.weather {
-                                HStack(spacing: 8) {
-                                    Image(systemName: weatherIcon(code: weather.current.icon))
-                                        .font(.system(size: 14))
-                                        .foregroundColor(.nearPrimary)
-                                    
-                                    Text("\(weather.current.text) \(weather.current.temp)°C")
-                                        .font(.system(size: 14, weight: .medium))
+                                HStack(spacing: 12) {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: weatherIcon(code: weather.current.icon))
+                                            .foregroundColor(.nearPrimary)
+                                        Text("\(weather.current.text) \(weather.current.temp)°C")
+                                            .font(.custom("Kaiti SC", size: 13).weight(.bold))
+                                    }
                                     
                                     Text("·")
                                         .foregroundColor(.nearTextSecondary.opacity(0.3))
                                     
                                     Text("湿度 \(weather.current.humidity)%")
-                                        .font(.system(size: 12))
+                                        .font(.custom("Kaiti SC", size: 12))
                                         .foregroundColor(.nearTextSecondary)
                                     
                                     if let air = weather.airNow {
                                         Text("·")
                                             .foregroundColor(.nearTextSecondary.opacity(0.3))
                                         Text("空气 \(air.category)")
-                                            .font(.system(size: 12))
+                                            .font(.custom("Kaiti SC", size: 12))
                                             .foregroundColor(.nearTextSecondary)
                                     }
                                 }
+                                .font(.system(size: 13)) // This line was redundant and is now removed as individual texts have fonts
                                 .padding(.top, 4)
                             }
                         }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 35)
+                        .background(
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 24).fill(Color(hex: "FCF9F2")) // Rice Paper Color
+                                
+                                // Decorative border
+                                RoundedRectangle(cornerRadius: 24)
+                                    .stroke(Color.red.opacity(0.1), lineWidth: 2)
+                                    .padding(4)
+                                
+                                // Subtle vertical decorative line
+                                Rectangle()
+                                    .fill(Color.red.opacity(0.05))
+                                    .frame(width: 1, height: 80)
+                                    .offset(x: -80, y: 0)
+                                
+                                if let weather = weatherService.weather {
+                                    Image(systemName: weatherIcon(code: weather.current.icon))
+                                        .font(.system(size: 80))
+                                        .foregroundColor(.nearPrimary.opacity(0.04))
+                                        .offset(x: 100, y: -20)
+                                }
+                            }
+                        )
+                        .shadow(color: Color.black.opacity(0.03), radius: 10, x: 0, y: 5)
                         
-                        HStack(alignment: .top, spacing: 16) {
-                            VStack(alignment: .leading, spacing: 8) {
-                                HStack {
-                                    Image(systemName: "checkmark.circle.fill")
-                                        .foregroundColor(.green)
-                                    Text("宜")
-                                        .font(.headline)
-                                        .foregroundColor(.green)
-                                }
-                                Text(almanac.yi)
-                                    .font(.body)
-                                    .foregroundColor(.nearTextPrimary)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(Color.white.opacity(0.5))
-                            .cornerRadius(12)
-                            
-                            VStack(alignment: .leading, spacing: 8) {
-                                HStack {
-                                    Image(systemName: "xmark.circle.fill")
-                                        .foregroundColor(.red)
-                                    Text("忌")
-                                        .font(.headline)
-                                        .foregroundColor(.red)
-                                }
-                                Text(almanac.ji)
-                                    .font(.body)
-                                    .foregroundColor(.nearTextPrimary)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(Color.white.opacity(0.5))
-                            .cornerRadius(12)
+                        // 2. Yi & Ji (Traditional Style)
+                        HStack(spacing: 15) {
+                            AlmanacGridCard(title: "宜", items: almanac.yi.split(separator: "、").map(String.init), color: .green)
+                            AlmanacGridCard(title: "忌", items: almanac.ji.split(separator: "、").map(String.init), color: .red)
                         }
                         
-                        VStack(spacing: 12) {
-                            Text("✨ 今日运势")
-                                .font(.headline)
-                                .foregroundColor(.nearPrimary)
+                        // 3. Traditional Details (jiShen, xiongSha, zhiShen, pengZu)
+                        VStack(spacing: 0) {
+                            DetailRow(title: "吉神", content: almanac.jiShen)
+                            Divider().background(Color.nearTextSecondary.opacity(0.1)).padding(.horizontal, 16)
+                            DetailRow(title: "凶煞", content: almanac.xiongSha)
+                            Divider().background(Color.nearTextSecondary.opacity(0.1)).padding(.horizontal, 16)
+                            DetailRow(title: "值神", content: almanac.zhiShen)
+                            Divider().background(Color.nearTextSecondary.opacity(0.1)).padding(.horizontal, 16)
+                            DetailRow(title: "彭祖", content: almanac.pengZu)
+                        }
+                        .background(Color.white.opacity(0.35))
+                        .cornerRadius(20)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 20)
+                                .stroke(Color.white.opacity(0.5), lineWidth: 1)
+                        )
+                        
+                        // 4. Fortune Card (Interpretation)
+                        VStack(spacing: 16) {
+                            HStack {
+                                Image(systemName: "seal.fill")
+                                    .font(.system(size: 20))
+                                    .foregroundColor(.red.opacity(0.7))
+                                Text("今日运势解读")
+                                    .font(.custom("Kaiti SC", size: 18).weight(.bold))
+                                Spacer()
+                                Image(systemName: "sparkles")
+                                    .foregroundColor(.nearPrimary.opacity(0.5))
+                            }
+                            .foregroundColor(.nearPrimary)
                             
                             Text(almanac.fortune)
-                                .font(.system(size: 16, weight: .medium))
-                                .multilineTextAlignment(.center)
+                                .font(.custom("Kaiti SC", size: 16).weight(.bold))
+                                .lineSpacing(8)
                                 .foregroundColor(.nearTextPrimary)
-                                .padding()
-                                .frame(maxWidth: .infinity)
-                                .background(
-                                    LinearGradient(gradient: Gradient(colors: [Color.nearPrimary.opacity(0.1), Color.nearPrimary.opacity(0.05)]), startPoint: .topLeading, endPoint: .bottomTrailing)
-                                )
-                                .cornerRadius(12)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 12)
-                                        .stroke(Color.nearPrimary.opacity(0.2), lineWidth: 1)
-                                )
+                                .multilineTextAlignment(.leading)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .padding(24)
+                        .background(
+                            LinearGradient(colors: [Color.nearPrimary.opacity(0.08), Color.nearPrimary.opacity(0.02)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                        )
+                        .cornerRadius(24)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 24)
+                                .stroke(Color.nearPrimary.opacity(0.15), lineWidth: 1)
+                        )
+                        
+                        // 5. Lucky Info Box
+                        HStack(spacing: 12) {
+                            LuckyBox(icon: "paintpalette.fill", title: "幸运色", value: almanac.luckyColor, color: .purple)
+                            LuckyBox(icon: "number", title: "幸运数", value: almanac.luckyNumber, color: .orange)
+                            LuckyBox(icon: "safari.fill", title: "开运位", value: almanac.luckyDirection, color: .blue)
                         }
                         
+                        // Refresh Button
                         Button(action: { refreshAlmanac() }) {
-                            HStack {
+                            HStack(spacing: 6) {
                                 Image(systemName: "sparkles")
-                                Text("刷新黄历")
+                                Text("重推今日黄历")
                             }
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 8)
-                            .background(Color.nearPrimary.opacity(0.1))
-                            .cornerRadius(20)
+                            .font(.system(size: 14, weight: .bold))
+                            .padding(.horizontal, 24)
+                            .padding(.vertical, 12)
+                            .background(Capsule().fill(Color.nearPrimary.opacity(0.1)))
+                            .foregroundColor(.nearPrimary)
                         }
                         .buttonStyle(PlainButtonStyle())
-                        .foregroundColor(.nearPrimary)
+                        .padding(.top, 10)
                     }
                     .padding(.horizontal, 20)
-                    .padding(.vertical, 10)
+                    .padding(.top, 10)
+                    .padding(.bottom, 30)
                 }
             } else if aiService.isLoading {
-                VStack {
-                    ProgressView().scaleEffect(1.5)
-                    Text("AI 正在推算今日运势...")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .padding(.top, 10)
+                VStack(spacing: 20) {
+                    ProgressView()
+                        .scaleEffect(1.2)
+                        .tint(.nearPrimary)
+                    Text("AI 正在根据星象推算今日运势...")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.nearTextSecondary)
                 }
                 .frame(maxHeight: .infinity)
             } else {
-                VStack(spacing: 16) {
+                VStack(spacing: 20) {
                     Image(systemName: "moon.stars.fill")
-                        .font(.system(size: 40))
-                        .foregroundColor(.nearSecondary)
+                        .font(.system(size: 48))
+                        .foregroundColor(.nearSecondary.opacity(0.5))
                     Text("暂无黄历信息")
+                        .font(.headline)
                     Button("获取今日运势") { refreshAlmanac() }
                         .buttonStyle(.borderedProminent)
+                        .tint(.nearPrimary)
+                        .cornerRadius(12)
                 }
                 .frame(maxHeight: .infinity)
             }
+        }
+    }
+    
+    // MARK: - Almanac UI Components
+    
+    struct BadgeView: View {
+        let text: String
+        let color: Color
+        var body: some View {
+            Text(text)
+                .font(.custom("Kaiti SC", size: 12).weight(.bold))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .border(color.opacity(0.3), width: 1)
+                .background(color.opacity(0.05))
+                .foregroundColor(color)
+        }
+    }
+    
+    struct AlmanacGridCard: View {
+        let title: String
+        let items: [String]
+        let color: Color
+        
+        var body: some View {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Image(systemName: "seal.fill")
+                        .font(.system(size: 10))
+                        .foregroundColor(color)
+                    Text(title)
+                        .font(.custom("Kaiti SC", size: 18).weight(.black))
+                        .foregroundColor(color)
+                }
+                
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                    ForEach(items, id: \.self) { item in
+                        Text(item)
+                            .font(.custom("Kaiti SC", size: 15).weight(.bold))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 6)
+                            .frame(maxWidth: .infinity)
+                            .background(color.opacity(0.05))
+                            .foregroundColor(.nearTextPrimary)
+                            .cornerRadius(4)
+                    }
+                }
+            }
+            .padding(16)
+            .background(Color(hex: "FCF9F2").opacity(0.8))
+            .cornerRadius(12)
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(color.opacity(0.15), lineWidth: 1)
+            )
+        }
+    }
+
+    
+    struct DetailRow: View {
+        let title: String
+        let content: String
+        
+        var body: some View {
+            HStack(alignment: .top, spacing: 12) {
+                Text(title)
+                    .font(.custom("Kaiti SC", size: 13).weight(.bold))
+                    .foregroundColor(.nearTextSecondary)
+                    .frame(width: 40, alignment: .leading)
+                
+                Text(content)
+                    .font(.custom("Kaiti SC", size: 13))
+                    .foregroundColor(.nearTextPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+        }
+    }
+    
+    struct LuckyBox: View {
+        let icon: String
+        let title: String
+        let value: String
+        let color: Color
+        
+        var body: some View {
+            VStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.system(size: 14))
+                    .foregroundColor(color.opacity(0.8))
+                Text(title)
+                    .font(.custom("Kaiti SC", size: 11))
+                    .foregroundColor(.nearTextSecondary)
+                Text(value)
+                    .font(.custom("Kaiti SC", size: 14).weight(.bold))
+                    .foregroundColor(.nearTextPrimary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 16)
+            .background(Color(hex: "FCF9F2").opacity(0.9))
+            .cornerRadius(12)
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(color.opacity(0.1), lineWidth: 1)
+            )
         }
     }
     

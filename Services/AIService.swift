@@ -245,11 +245,32 @@ class AIService: ObservableObject {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.setValue("Bearer \(activeConfig.apiKey)", forHTTPHeaderField: "Authorization")
             
-            let dateStr = SharedUtils.dateFormatter(format: "yyyy-MM-dd").string(from: Date())
-            let systemPrompt = "你是一个专业的中国传统黄历助手。今天是 \(dateStr)。请返回 JSON：{\"date\":\"\(dateStr)\",\"lunarDate\":\"...\",\"yi\":\"...\",\"ji\":\"...\",\"fortune\":\"...\"}"
+            let dateStr = SharedUtils.dateFormatter(format: "yyyy年MM月dd日").string(from: Date())
+            let systemPrompt = """
+            你是一位经验丰富的黄历解说师。今天是\(dateStr)，请以传统钦天监老黄历的风格，生成今日完整黄历，并附上温暖治愈的现代解读。
+            
+            你必须严格以 JSON 格式返回，且所有值必须为字符串 (String) 格式。包含以下字段：
+            - date: 阳历 (yyyy-MM-dd)
+            - lunarDate: 准确农历日期
+            - ganZhi: 年月日干支 (单行字符串，如：乙亥年 丙子月 丁未日)
+            - weekday: 星期X
+            - chongSha: 冲XXX煞XXX
+            - yi: 宜 (5-8项，用、分隔)
+            - ji: 忌 (5-8项，用、分隔)
+            - jiShen: 吉神 (2-4个)
+            - xiongSha: 凶煞 (2-4个)
+            - zhiShen: 值神
+            - pengZu: 彭祖百忌
+            - fortune: 今日运势箴言 (80-150字，古今结合，温暖治愈)
+            - luckyColor: 幸运颜色
+            - luckyNumber: 幸运数字 (字符串格式)
+            - luckyDirection: 开运方位
+            
+            重要：直接返回 JSON，禁止包含 <think> 标签、Markdown 代码块或任何额外正文。确保 JSON 结构扁平，不要嵌套对象。
+            """
             var body: [String: Any] = [
                 "model": activeConfig.model,
-                "messages": [["role": "system", "content": systemPrompt + "\n重要：请直接返回 JSON 结果，不要包含任何思考过程或额外解释。"], ["role": "user", "content": "生成今日黄历"]],
+                "messages": [["role": "system", "content": systemPrompt], ["role": "user", "content": "生成 \(dateStr) 的完整黄历"]],
                 "temperature": 0.7
             ]
             
