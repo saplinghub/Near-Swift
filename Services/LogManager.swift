@@ -9,9 +9,9 @@ class LogManager: ObservableObject {
     
     private var logDirectory: URL {
         let fileManager = FileManager.default
-        let urls = fileManager.urls(for: .documentDirectory, in: .userDomainMask)
-        let docDir = urls.first!
-        let dir = docDir.appendingPathComponent("NearLogs")
+        let urls = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)
+        let appSupportDir = urls.first!.appendingPathComponent("Near-Swift")
+        let dir = appSupportDir.appendingPathComponent("Logs")
         if !fileManager.fileExists(atPath: dir.path) {
             try? fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
         }
@@ -26,12 +26,16 @@ class LogManager: ObservableObject {
         let timestamp = SharedUtils.dateFormatter(format: "yyyy-MM-dd HH:mm:ss.SSS").string(from: Date())
         let newEntry = "[\(timestamp)] \(message)\n"
         
-        // 1. Memory Log (Debug UI)
+        // 1. Memory Log (Debug UI) - Keep only last 100 lines
         DispatchQueue.main.async {
-            self.logs += newEntry
-            if self.logs.count > 100000 {
-                self.logs = String(self.logs.suffix(50000))
+            let currentLogs = self.logs.components(separatedBy: .newlines).filter { !$0.isEmpty }
+            var updatedLogs = currentLogs
+            updatedLogs.append(newEntry.trimmingCharacters(in: .newlines))
+            
+            if updatedLogs.count > 100 {
+                updatedLogs = Array(updatedLogs.suffix(100))
             }
+            self.logs = updatedLogs.joined(separator: "\n") + "\n"
         }
         
         // 2. Console Print

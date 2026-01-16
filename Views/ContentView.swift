@@ -13,6 +13,10 @@ struct ContentView: View {
     @State private var editingCountdown: CountdownEvent? = nil
     @State private var selectedTopTab = 0 // "In Progress" vs "Completed"
     @State private var selectedBottomTab = 0 // "Events", "Calendar", etc.
+    
+    // Deletion states
+    @State private var showingDeleteEventAlert = false
+    @State private var eventToDelete: CountdownEvent? = nil
 
     var body: some View {
         ZStack {
@@ -113,17 +117,18 @@ struct ContentView: View {
                 Color.black.opacity(0.2)
                     .edgesIgnoringSafeArea(.all)
                     .onTapGesture {
-                        withAnimation { 
+                        withAnimation(.spring(response: 0.55, dampingFraction: 0.85)) { 
                             showingAddView = false
                             editingCountdown = nil
                         }
                     }
                 
                 AddCountdownView(isPresented: $showingAddView, editingEvent: editingCountdown)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(Color.nearBackgroundEnd) // Ensure background
                     .cornerRadius(16) // Match window corner
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .transition(.asymmetric(
+                        insertion: .move(edge: .bottom).combined(with: .opacity),
+                        removal: .move(edge: .bottom).combined(with: .opacity)
+                    ))
                     .zIndex(2)
             }
             
@@ -131,17 +136,44 @@ struct ContentView: View {
                 Color.black.opacity(0.2)
                     .edgesIgnoringSafeArea(.all)
                     .onTapGesture {
-                        withAnimation { showingSettingsView = false }
+                        withAnimation(.spring(response: 0.55, dampingFraction: 0.85)) { showingSettingsView = false }
                     }
                 
-                SettingsView(isPresented: $showingSettingsView)
-                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                     .background(Color.nearBackgroundEnd)
-                     .cornerRadius(16)
-                     .transition(.move(edge: .bottom).combined(with: .opacity))
-                     .zIndex(3)
-            }
-        }
+                 SettingsView(isPresented: $showingSettingsView)
+                      .frame(maxWidth: .infinity, maxHeight: .infinity)
+                      .background(Color.nearBackgroundEnd)
+                      .cornerRadius(16)
+                      .transition(.asymmetric(
+                          insertion: .move(edge: .bottom).combined(with: .opacity),
+                          removal: .move(edge: .bottom).combined(with: .opacity)
+                      ))
+                      .zIndex(3)
+             }
+             
+             // Custom Delete Confirmation Overlay
+             if showingDeleteEventAlert, let event = eventToDelete {
+                 NearConfirmDialog(
+                     title: "确定要删除“\(event.name)”吗？",
+                     message: "删除后将无法恢复。",
+                     confirmTitle: "删除",
+                     cancelTitle: "取消",
+                     onConfirm: {
+                         withAnimation {
+                             countdownManager.deleteCountdown(event.id)
+                             showingDeleteEventAlert = false
+                             eventToDelete = nil
+                         }
+                     },
+                     onCancel: {
+                         withAnimation {
+                             showingDeleteEventAlert = false
+                             eventToDelete = nil
+                         }
+                     }
+                 )
+                 .zIndex(400)
+             }
+         }
         .frame(width: 372, height: 600)
         .background(
              ZStack {
@@ -191,6 +223,9 @@ struct ContentView: View {
                         CountdownCardView(countdown: pinned, onEdit: {
                             editingCountdown = pinned
                             showingAddView = true
+                        }, onDelete: {
+                            eventToDelete = pinned
+                            showingDeleteEventAlert = true
                         })
                     }
                     .padding(.bottom, 12)
@@ -204,6 +239,9 @@ struct ContentView: View {
                         CountdownCardView(countdown: countdown, onEdit: {
                             editingCountdown = countdown
                             showingAddView = true
+                        }, onDelete: {
+                            eventToDelete = countdown
+                            showingDeleteEventAlert = true
                         })
                             .onDrag {
                                 let idString = countdown.uuidString
@@ -235,7 +273,10 @@ struct ContentView: View {
                         .padding(.top, 100)
                 } else {
                     ForEach(countdownManager.completedCountdowns) { countdown in
-                        CountdownCardView(countdown: countdown)
+                        CountdownCardView(countdown: countdown, onDelete: {
+                            eventToDelete = countdown
+                            showingDeleteEventAlert = true
+                        })
                             .opacity(0.7)
                     }
                 }

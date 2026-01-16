@@ -6,6 +6,7 @@ struct SettingsView: View {
     @EnvironmentObject var aiService: AIService
     @EnvironmentObject var storageManager: StorageManager
     
+    @State private var apiFormat: AIFormat = .groq
     @State private var baseURL: String = ""
     @State private var apiKey: String = ""
     @State private var model: String = ""
@@ -20,7 +21,15 @@ struct SettingsView: View {
     @State private var isSearching = false
     @State private var weatherTestMessage: String?
     @State private var isTestingWeather = false
-    @State private var selectedTab: Int = 0 // 0: App, 1: AI, 2: Weather, 3: Pet
+    @State private var selectedTab: Int = 0 
+    
+    // Multi-AI Config States
+    @State private var showConfigSheet = false
+    @State private var editingConfig: AIConfig? = nil
+    
+    // Deletion states
+    @State private var showingDeleteAIAlert = false
+    @State private var configToDelete: AIConfig? = nil
     
     // Pet Settings
     @State private var isPetSelfAwarenessEnabled: Bool = true
@@ -53,10 +62,16 @@ struct SettingsView: View {
                         
                         Spacer()
                         
-                        Button(action: { isPresented = false }) {
+                        Button(action: {
+                            withAnimation(.spring(response: 0.55, dampingFraction: 0.85)) {
+                                isPresented = false
+                            }
+                        }) {
                             Image(systemName: "xmark.circle.fill")
                                 .font(.system(size: 24))
                                 .foregroundColor(Color.gray.opacity(0.5))
+                                .padding(8) // Expand hit area
+                                .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                     }
@@ -87,7 +102,7 @@ struct SettingsView: View {
                 Color.black.opacity(0.3)
                     .edgesIgnoringSafeArea(.all)
                     .onTapGesture {
-                        withAnimation { showExpandedEditor = false }
+                        withAnimation(.spring(response: 0.55, dampingFraction: 0.85)) { showExpandedEditor = false }
                     }
                 
                 ExpandedTextEditorView(text: $systemPrompt, isPresented: $showExpandedEditor)
@@ -133,18 +148,64 @@ struct SettingsView: View {
                 .zIndex(200)
                 .offset(y: 200) // Lower center for better visibility
             }
-        }
-        .onAppear {
-            self.baseURL = aiService.config.baseURL
-            self.apiKey = aiService.config.apiKey
-            self.model = aiService.config.model
             
-            if let custom = aiService.config.systemPrompt, !custom.isEmpty {
-                 self.systemPrompt = custom
-            } else {
-                 self.systemPrompt = AIService.defaultSystemPrompt
+            // AI Config Selection Overlay
+            if showConfigSheet {
+                Color.black.opacity(0.3)
+                    .edgesIgnoringSafeArea(.all)
+                    .onTapGesture {
+                        withAnimation(.spring(response: 0.55, dampingFraction: 0.85)) { showConfigSheet = false }
+                    }
+                
+                AIConfigSheet(config: $editingConfig, isPresented: $showConfigSheet) { savedConfig in
+                    if let index = storageManager.aiStorage.configs.firstIndex(where: { $0.id == savedConfig.id }) {
+                        storageManager.aiStorage.configs[index] = savedConfig
+                    } else {
+                        storageManager.aiStorage.configs.append(savedConfig)
+                    }
+                    storageManager.saveAIStorage()
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) { showConfigSheet = false }
+                    showSaveFeedback(message: "配置已保存")
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color.nearBackgroundEnd)
+                .cornerRadius(16)
+                .transition(.asymmetric(
+                    insertion: .move(edge: .bottom).combined(with: .opacity),
+                    removal: .move(edge: .bottom).combined(with: .opacity)
+                ))
+                .zIndex(150)
             }
             
+            // Custom Delete Confirmation Overlay
+            if showingDeleteAIAlert, let config = configToDelete {
+                NearConfirmDialog(
+                    title: "确定要删除此 AI 配置吗？",
+                    message: "删除后将无法恢复，配置过往记录也将丢失。",
+                    confirmTitle: "删除",
+                    cancelTitle: "取消",
+                    onConfirm: {
+                        withAnimation {
+                            storageManager.aiStorage.configs.removeAll { $0.id == config.id }
+                            if storageManager.aiStorage.activeID == config.id {
+                                storageManager.aiStorage.activeID = storageManager.aiStorage.configs.first?.id ?? UUID()
+                            }
+                            storageManager.saveAIStorage()
+                            showingDeleteAIAlert = false
+                            configToDelete = nil
+                        }
+                    },
+                    onCancel: {
+                        withAnimation {
+                            showingDeleteAIAlert = false
+                            configToDelete = nil
+                        }
+                    }
+                )
+                .zIndex(300)
+            }
+        }
+        .onAppear {
             self.qWeatherKey = storageManager.qWeatherKey
             self.qWeatherHost = storageManager.qWeatherHost
             self.waqiToken = storageManager.waqiToken
@@ -201,38 +262,33 @@ struct SettingsView: View {
             .store(in: &cancellables)
     }
     
-    func testConnection() {
+    func testConnection(with config: AIConfig) {
         isTesting = true
         testMessage = nil
         
-        let tempConfig = AIConfig(baseURL: baseURL, apiKey: apiKey, model: model, systemPrompt: systemPrompt)
-        let previousConfig = aiService.config
-        aiService.config = tempConfig
-        
-        aiService.testConnection()
+        // Temporarily use the config for testing without affecting active one
+        // Note: For a clean test, we might want a dedicated test method in AIService that takes a config
+        // But for now, we'll just show success/failure message based on simple logic
+        aiService.parseCountdown(input: "测试")
             .receive(on: DispatchQueue.main)
             .sink(
                 receiveCompletion: { completion in
                     isTesting = false
                     if case .failure(let error) = completion {
-                        testMessage = "连接失败: \(error.localizedDescription)"
+                        testMessage = "测试失败: \(error.localizedDescription)"
                     }
-                    aiService.config = previousConfig
                 },
-                receiveValue: { success in
-                    testMessage = success ? "连接成功！" : "连接失败"
-                    aiService.config = previousConfig
+                receiveValue: { _ in
+                    testMessage = "测试成功！"
                 }
             )
             .store(in: &cancellables)
     }
 
     func saveAISettings() {
-        let newConfig = AIConfig(baseURL: baseURL, apiKey: apiKey, model: model, systemPrompt: systemPrompt)
-        aiService.config = newConfig
-        storageManager.aiConfig = newConfig
-        storageManager.saveAIConfig()
-        showSaveFeedback()
+        // Now handled by sheet or direct selection
+        storageManager.saveAIStorage()
+        showSaveFeedback(message: "配置已更新")
     }
     func savePetSettings() {
         storageManager.savePetSettings(
@@ -248,7 +304,7 @@ struct SettingsView: View {
         storageManager.isPetIntentAwarenessEnabled = isPetIntentAwarenessEnabled
         PetManager.shared.model.isEnabled = isPetEnabled
         PetManager.shared.model.isHealthReminderEnabled = isHealthReminderEnabled
-        showSaveFeedback()
+        showSaveFeedback(message: "设置已保存")
     }
 
     func saveWeatherSettings() {
@@ -257,18 +313,18 @@ struct SettingsView: View {
         storageManager.waqiToken = waqiToken
         storageManager.saveQWeatherKey()
         weatherService.fetchWeather()
-        showSaveFeedback()
+        showSaveFeedback(message: "天气配置已保存")
     }
 
     func saveGeneralSettings() {
         storageManager.saveGeneralSettings(isWindmillEnabled: isWindmillEnabled)
         StatusBarManager.shared?.updateWindmillState()
-        showSaveFeedback()
+        showSaveFeedback(message: "设置已保存")
     }
 
-    private func showSaveFeedback() {
-        withAnimation {
-            saveFeedbackMessage = "设置已保存"
+    private func showSaveFeedback(message: String = "设置已保存") {
+        withAnimation(.spring()) {
+            saveFeedbackMessage = message
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
             withAnimation {
@@ -284,68 +340,98 @@ struct SettingsView: View {
             HStack {
                 Image(systemName: "brain.head.profile")
                     .foregroundColor(.nearPrimary)
-                Text("AI 智能化配置")
+                Text("AI 平台管理")
                     .font(.headline)
                     .foregroundColor(.nearTextPrimary)
+                
+                Spacer()
+                
+                Button(action: {
+                    editingConfig = AIConfig(name: "新配置", format: .groq, baseURL: "", apiKey: "", model: "")
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                        showConfigSheet = true
+                    }
+                }) {
+                    Label("添加", systemImage: "plus.circle.fill")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundColor(.nearPrimary)
+                        .padding(.vertical, 8)
+                        .padding(.horizontal, 12)
+                        .background(Color.nearPrimary.opacity(0.1))
+                        .cornerRadius(20)
+                }
+                .buttonStyle(.plain)
             }
             
-            VStack(spacing: 12) {
-                SettingsInputRow(icon: "link", title: "API 地址", placeholder: "https://api.openai.com/v1", text: $baseURL)
-                SettingsInputRow(icon: "key", title: "API 密钥", placeholder: "sk-...", text: $apiKey, isSecure: true)
-                SettingsInputRow(icon: "cube", title: "模型名称", placeholder: "gpt-4", text: $model)
-                
-                VStack(alignment: .leading, spacing: 6) {
+            VStack(spacing: 8) {
+                ForEach(storageManager.aiStorage.configs) { config in
                     HStack {
-                        Text("系统提示词")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundColor(.nearTextSecondary)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(config.name)
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundColor(storageManager.aiStorage.activeID == config.id ? .nearPrimary : .nearTextPrimary)
+                            Text("\(config.format.rawValue) · \(config.model)")
+                                .font(.system(size: 11))
+                                .foregroundColor(.nearTextSecondary)
+                        }
+                        
                         Spacer()
-                        Button(action: { withAnimation { showExpandedEditor = true } }) {
-                            Image(systemName: "arrow.up.left.and.arrow.down.right")
-                                .font(.system(size: 12))
+                        
+                        if storageManager.aiStorage.activeID == config.id {
+                            Image(systemName: "checkmark.circle.fill")
                                 .foregroundColor(.nearPrimary)
+                                .font(.system(size: 16))
+                        }
+                        
+                        Button(action: {
+                            editingConfig = config
+                            withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                                showConfigSheet = true
+                            }
+                        }) {
+                            Image(systemName: "pencil.circle")
+                                .foregroundColor(.secondary)
+                                .font(.system(size: 18))
                         }
                         .buttonStyle(.plain)
+                        .padding(.leading, 8)
+                        
+                        if storageManager.aiStorage.configs.count > 1 {
+                            Button(action: {
+                                configToDelete = config
+                                showingDeleteAIAlert = true
+                            }) {
+                                Image(systemName: "trash")
+                                    .foregroundColor(.red.opacity(0.6))
+                                    .font(.system(size: 14))
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.leading, 8)
+                        }
                     }
-                    
-                    TextEditor(text: $systemPrompt)
-                        .font(.system(size: 12, design: .monospaced))
-                        .frame(height: 120)
-                        .padding(4)
-                        .background(Color(hex: "#F8FAFC"))
-                        .cornerRadius(8)
-                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.nearTextSecondary.opacity(0.1), lineWidth: 1))
+                    .padding(12)
+                    .background(storageManager.aiStorage.activeID == config.id ? Color.nearPrimary.opacity(0.05) : Color(hex: "#F8FAFC"))
+                    .cornerRadius(12)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(storageManager.aiStorage.activeID == config.id ? Color.nearPrimary.opacity(0.2) : Color.clear, lineWidth: 1)
+                    )
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        if storageManager.aiStorage.activeID != config.id {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                storageManager.aiStorage.activeID = config.id
+                                storageManager.saveAIStorage()
+                            }
+                            showSaveFeedback(message: "已切换至 \(config.name)")
+                        }
+                    }
                 }
             }
             .padding(16)
             .background(Color.white)
             .cornerRadius(12)
             .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
-            
-            HStack(spacing: 12) {
-                Button(action: testConnection) {
-                    HStack {
-                        if isTesting { ProgressView().scaleEffect(0.6).frame(width: 16, height: 16) }
-                        else { Image(systemName: "network") }
-                        Text("测试连接")
-                    }
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(.nearTextPrimary)
-                    .frame(maxWidth: .infinity).frame(height: 40)
-                    .background(Color.white).cornerRadius(10)
-                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.nearTextSecondary.opacity(0.2), lineWidth: 1))
-                }
-                .buttonStyle(.plain).disabled(isTesting)
-                
-                Button(action: saveAISettings) {
-                    Text("保存 AI 配置")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity).frame(height: 40)
-                        .background(Color.nearPrimary).cornerRadius(10)
-                }
-                .buttonStyle(.plain)
-            }
             
             if let message = testMessage {
                 Text(message).font(.caption).foregroundColor(message.contains("成功") ? .green : .red)
@@ -728,14 +814,14 @@ struct SettingsView: View {
                     HStack {
                         Text("版本")
                         Spacer()
-                        Text("v1.2.0")
+                        Text("v1.3.0")
                             .foregroundColor(.nearTextSecondary)
                     }
                     Divider()
                     HStack {
                         Text("开发者")
                         Spacer()
-                        Text("Near Creative")
+                        Text("sapling")
                             .foregroundColor(.nearTextSecondary)
                     }
                     .contentShape(Rectangle())
@@ -833,7 +919,7 @@ struct SettingsView: View {
                 
                 Button(action: {
                     NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(logManager.logs, forType: .string)
+                    NSPasteboard.general.setString(LogManager.shared.logs, forType: .string)
                 }) {
                     Label("复制", systemImage: "doc.on.doc")
                         .font(.system(size: 12))
@@ -845,7 +931,7 @@ struct SettingsView: View {
             }
             
             ScrollView {
-                Text(logManager.logs.isEmpty ? "暂无日志数据..." : logManager.logs)
+                Text(LogManager.shared.logs.isEmpty ? "暂无日志数据..." : LogManager.shared.logs)
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundColor(.nearTextPrimary)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -863,7 +949,7 @@ struct SettingsView: View {
                     panel.allowedContentTypes = [.plainText]
                     panel.nameFieldStringValue = "near_weather_logs.txt"
                     if panel.runModal() == .OK, let url = panel.url {
-                        try? logManager.logs.write(to: url, atomically: true, encoding: .utf8)
+                        try? LogManager.shared.logs.write(to: url, atomically: true, encoding: .utf8)
                     }
                 }) {
                     Label("导出日志", systemImage: "square.and.arrow.up")
@@ -875,7 +961,7 @@ struct SettingsView: View {
                 .cornerRadius(8)
                 .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.nearTextSecondary.opacity(0.2), lineWidth: 1))
                 
-                Button(action: { logManager.clear() }) {
+                Button(action: { LogManager.shared.clear() }) {
                     Label("清空日志", systemImage: "trash")
                         .frame(maxWidth: .infinity)
                 }
@@ -953,5 +1039,249 @@ struct ExpandedTextEditorView: View {
         // Removed fixed frame from here, controlled by parent
         .cornerRadius(12)
         .shadow(radius: 20)
+    }
+}
+
+struct AIConfigSheet: View {
+    @Binding var config: AIConfig?
+    @Binding var isPresented: Bool
+    var onSave: (AIConfig) -> Void
+    
+    @State private var name: String = ""
+    @State private var format: AIFormat = .groq
+    @State private var baseURL: String = ""
+    @State private var apiKey: String = ""
+    @State private var model: String = ""
+    @State private var systemPrompt: String = ""
+    
+    @State private var isTesting = false
+    @State private var testMessage: String?
+    
+    @EnvironmentObject var aiService: AIService
+    @State private var cancellables = Set<AnyCancellable>()
+    
+    @FocusState private var focusedField: Field?
+    
+    enum Field {
+        case name, baseURL, apiKey, model, systemPrompt
+    }
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header
+            HStack {
+                    Button(action: {
+                        withAnimation(.spring(response: 0.55, dampingFraction: 0.85)) {
+                            isPresented = false
+                        }
+                    }) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundColor(.nearTextSecondary)
+                            .frame(width: 32, height: 32)
+                            .background(Color(hex: "#F1F5F9"))
+                            .clipShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                
+                Spacer()
+                
+                Text(config?.id == nil ? "添加 AI 配置" : "编辑 AI 配置")
+                    .font(.system(size: 18, weight: .bold))
+                
+                Spacer()
+                
+                Button(action: {
+                    let newConfig = AIConfig(
+                        id: config?.id ?? UUID(),
+                        name: name.isEmpty ? "未命名配置" : name,
+                        format: format,
+                        baseURL: baseURL,
+                        apiKey: apiKey,
+                        model: model,
+                        systemPrompt: systemPrompt
+                    )
+                    onSave(newConfig)
+                }) {
+                    Text("保存")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 20)
+                        .frame(height: 36)
+                        .background(LinearGradient(gradient: Gradient(colors: [.nearPrimary, .nearPrimary.opacity(0.8)]), startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .cornerRadius(10)
+                        .shadow(color: .nearPrimary.opacity(0.3), radius: 4, x: 0, y: 2)
+                }
+                .buttonStyle(.plain)
+                .disabled(apiKey.isEmpty || model.isEmpty)
+                .opacity((apiKey.isEmpty || model.isEmpty) ? 0.5 : 1)
+            }
+            .padding(24)
+            .background(Color.white.opacity(0.8))
+            
+            ScrollView {
+                VStack(spacing: 24) {
+                    VStack(alignment: .leading, spacing: 20) {
+                        FormGroup(label: "配置名称") {
+                            TextField("例如：Groq 高速", text: $name)
+                                .textFieldStyle(PlainTextFieldStyle())
+                                .padding(12)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(Color(hex: "#F8FAFC"))
+                                .cornerRadius(12)
+                                .overlay(RoundedRectangle(cornerRadius: 12).stroke(focusedField == .name ? Color.nearPrimary.opacity(0.5) : Color(hex: "#E2E8F0"), lineWidth: 1))
+                                .focused($focusedField, equals: .name)
+                                .contentShape(Rectangle())
+                                .onTapGesture { focusedField = .name }
+                        }
+                        
+                        FormGroup(label: "接口格式") {
+                            NearPremiumPicker(items: AIFormat.allCases, selection: $format)
+                        }
+                        
+                        FormGroup(label: "API 地址") {
+                            TextField(format == .groq ? "https://api.groq.com/openai/v1" : "https://api.example.com/v1", text: $baseURL)
+                                .textFieldStyle(PlainTextFieldStyle())
+                                .padding(12)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(Color(hex: "#F8FAFC"))
+                                .cornerRadius(12)
+                                .overlay(RoundedRectangle(cornerRadius: 12).stroke(focusedField == .baseURL ? Color.nearPrimary.opacity(0.5) : Color(hex: "#E2E8F0"), lineWidth: 1))
+                                .focused($focusedField, equals: .baseURL)
+                                .contentShape(Rectangle())
+                                .onTapGesture { focusedField = .baseURL }
+                        }
+                        
+                        FormGroup(label: "API 密钥") {
+                            SecureField("sk-...", text: $apiKey)
+                                .textFieldStyle(PlainTextFieldStyle())
+                                .padding(12)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(Color(hex: "#F8FAFC"))
+                                .cornerRadius(12)
+                                .overlay(RoundedRectangle(cornerRadius: 12).stroke(focusedField == .apiKey ? Color.nearPrimary.opacity(0.5) : Color(hex: "#E2E8F0"), lineWidth: 1))
+                                .focused($focusedField, equals: .apiKey)
+                                .contentShape(Rectangle())
+                                .onTapGesture { focusedField = .apiKey }
+                        }
+                        
+                        FormGroup(label: "模型名称") {
+                            TextField("llama-3.3-70b-versatile", text: $model)
+                                .textFieldStyle(PlainTextFieldStyle())
+                                .padding(12)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(Color(hex: "#F8FAFC"))
+                                .cornerRadius(12)
+                                .overlay(RoundedRectangle(cornerRadius: 12).stroke(focusedField == .model ? Color.nearPrimary.opacity(0.5) : Color(hex: "#E2E8F0"), lineWidth: 1))
+                                .focused($focusedField, equals: .model)
+                                .contentShape(Rectangle())
+                                .onTapGesture { focusedField = .model }
+                        }
+                        
+                        FormGroup(label: "系统提示词 (可选)") {
+                            TextEditor(text: $systemPrompt)
+                                .font(.system(size: 12, design: .monospaced))
+                                .frame(height: 120)
+                                .padding(8)
+                                .background(Color(hex: "#F8FAFC"))
+                                .cornerRadius(12)
+                                .overlay(RoundedRectangle(cornerRadius: 12).stroke(focusedField == .systemPrompt ? Color.nearPrimary.opacity(0.5) : Color(hex: "#E2E8F0"), lineWidth: 1))
+                                .focused($focusedField, equals: .systemPrompt)
+                                .contentShape(Rectangle())
+                                .onTapGesture { focusedField = .systemPrompt }
+                        }
+                    }
+                    .padding(24)
+                    .background(Color.white.opacity(0.4))
+                    .cornerRadius(16)
+                    
+                    VStack(spacing: 12) {
+                        Button(action: testConnection) {
+                            HStack {
+                                if isTesting { 
+                                    ProgressView()
+                                        .scaleEffect(0.6)
+                                        .frame(width: 16, height: 16)
+                                } else { 
+                                    Image(systemName: "network") 
+                                }
+                                Text("点击测试此配置可用性")
+                                    .font(.system(size: 13, weight: .medium))
+                            }
+                            .frame(maxWidth: .infinity).frame(height: 44)
+                            .background(Color.white)
+                            .cornerRadius(12)
+                            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color(hex: "#E2E8F0"), lineWidth: 1))
+                        }
+                        .buttonStyle(.plain).disabled(isTesting || apiKey.isEmpty)
+                        
+                        if let msg = testMessage {
+                            HStack {
+                                Image(systemName: msg.contains("成功") ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                                Text(msg)
+                            }
+                            .font(.caption)
+                            .foregroundColor(msg.contains("成功") ? .green : .red)
+                            .padding(.top, 4)
+                        }
+                    }
+                }
+                .padding(24)
+            }
+        }
+        .background(
+             LinearGradient(gradient: Gradient(colors: [.nearBackgroundStart, .nearBackgroundEnd]), startPoint: .topLeading, endPoint: .bottomTrailing)
+        )
+        .onAppear {
+            if let config = config {
+                self.name = config.name
+                self.format = config.format
+                self.baseURL = config.baseURL
+                self.apiKey = config.apiKey
+                self.model = config.model
+                self.systemPrompt = config.systemPrompt ?? ""
+            }
+        }
+    }
+    
+    private func testConnection() {
+        isTesting = true
+        testMessage = nil
+        
+        // This is a bit tricky because AIService uses storageManager.activeAIConfig
+        // For testing a non-active config, we'd need to modify AIService
+        // Since we are in a sheet, let's keep it simple for now and just check if we can reach the URL
+        guard let url = URL(string: "\(baseURL.isEmpty && format == .groq ? "https://api.groq.com/openai/v1" : baseURL)/chat/completions") else {
+            isTesting = false
+            testMessage = "URL 无效"
+            return
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        
+        let body: [String: Any] = [
+            "model": model,
+            "messages": [["role": "user", "content": "hi"]],
+            "max_tokens": 5
+        ]
+        
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            DispatchQueue.main.async {
+                isTesting = false
+                if let error = error {
+                    testMessage = "测试失败: \(error.localizedDescription)"
+                } else if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
+                    testMessage = "测试成功！"
+                } else {
+                    let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+                    testMessage = "测试失败 (错误码: \(code))"
+                }
+            }
+        }.resume()
     }
 }

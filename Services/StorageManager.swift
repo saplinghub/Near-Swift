@@ -2,7 +2,7 @@ import Foundation
 
 class StorageManager: ObservableObject {
     @Published var countdowns: [CountdownEvent] = []
-    @Published var aiConfig: AIConfig = AIConfig.createDefault()
+    @Published var aiStorage: AIStorage = AIStorage.createDefault()
     @Published var qWeatherKey: String = ""
     @Published var qWeatherHost: String = "https://devapi.qweather.com/v7"
     @Published var qWeatherLocationId: String = "101010100" // Default: Beijing
@@ -16,7 +16,8 @@ class StorageManager: ObservableObject {
     @Published var isWindmillEnabled: Bool = true
 
     private let countdownsKey = "countdowns"
-    private let aiConfigKey = "aiConfig"
+    private let aiStorageKey = "aiStorage"
+    private let legacyAIConfigKey = "aiConfig"
     private let qWeatherKeyPath = "qWeatherKey"
     private let qWeatherHostPath = "qWeatherHost"
     private let qWeatherLocIdPath = "qWeatherLocId"
@@ -34,7 +35,7 @@ class StorageManager: ObservableObject {
 
     private func loadAll() {
         loadCountdowns()
-        loadAIConfig()
+        loadAIStorage()
         loadQWeatherKey()
     }
 
@@ -48,14 +49,35 @@ class StorageManager: ObservableObject {
         }
     }
 
-    private func loadAIConfig() {
-        guard let data = UserDefaults.standard.data(forKey: aiConfigKey) else { return }
-
-        do {
-            aiConfig = try JSONDecoder().decode(AIConfig.self, from: data)
-        } catch {
-            print("Error loading AI config: \(error)")
+    private func loadAIStorage() {
+        // 1. Try to load AIStorage (Multi-config)
+        if let data = UserDefaults.standard.data(forKey: aiStorageKey) {
+            do {
+                aiStorage = try JSONDecoder().decode(AIStorage.self, from: data)
+                return
+            } catch {
+                print("Error loading AI storage: \(error)")
+            }
         }
+        
+        // 2. Migration: Try to load legacy AIConfig
+        if let data = UserDefaults.standard.data(forKey: legacyAIConfigKey) {
+            do {
+                let legacyConfig = try JSONDecoder().decode(AIConfig.self, from: data)
+                var migratedConfig = legacyConfig
+                migratedConfig.name = "默认配置"
+                aiStorage = AIStorage(configs: [migratedConfig], activeID: migratedConfig.id)
+                saveAIStorage()
+                // Optional: remove legacy key
+                // UserDefaults.standard.removeObject(forKey: legacyAIConfigKey)
+                return
+            } catch {
+                print("Error migrating legacy AI config: \(error)")
+            }
+        }
+        
+        // 3. Fallback to default
+        aiStorage = AIStorage.createDefault()
     }
 
     private func loadQWeatherKey() {
@@ -108,13 +130,20 @@ class StorageManager: ObservableObject {
         saveCountdowns()
     }
 
-    func saveAIConfig() {
+    func saveAIStorage() {
         do {
-            let data = try JSONEncoder().encode(aiConfig)
-            UserDefaults.standard.set(data, forKey: aiConfigKey)
+            let data = try JSONEncoder().encode(aiStorage)
+            UserDefaults.standard.set(data, forKey: aiStorageKey)
         } catch {
-            print("Error saving AI config: \(error)")
+            print("Error saving AI storage: \(error)")
         }
+    }
+    
+    var activeAIConfig: AIConfig {
+        if let active = aiStorage.configs.first(where: { $0.id == aiStorage.activeID }) {
+            return active
+        }
+        return aiStorage.configs.first ?? AIConfig.createDefault()
     }
 
     func addCountdown(_ countdown: CountdownEvent) {

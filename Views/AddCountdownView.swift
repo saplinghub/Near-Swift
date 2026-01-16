@@ -19,6 +19,7 @@ struct AddCountdownView: View {
     
     // Icon selection
     let icons: [IconType] = IconType.allCases
+    @State private var isIconsExpanded = false
     
     // Date Picker States
     @State private var showStartDatePicker = false
@@ -28,15 +29,20 @@ struct AddCountdownView: View {
         VStack(spacing: 0) {
             // Header
             HStack {
-                Button(action: { isPresented = false }) {
+                Button(action: {
+                    withAnimation(.spring(response: 0.55, dampingFraction: 0.85)) {
+                        isPresented = false
+                    }
+                }) {
                     Image(systemName: "xmark")
                         .font(.system(size: 14, weight: .bold))
-                        .foregroundColor(.secondary)
-                        .frame(width: 36, height: 36)
+                        .foregroundColor(.nearTextSecondary)
+                        .frame(width: 32, height: 32)
                         .background(Color(hex: "#F1F5F9"))
-                        .cornerRadius(10)
+                        .clipShape(Circle())
                 }
                 .buttonStyle(.plain)
+                .contentShape(Rectangle())
                 
                 Spacer()
                 
@@ -76,13 +82,16 @@ struct AddCountdownView: View {
                             TextField("例如：过年倒计时 / 今天下午3点有个会", text: $aiInput)
                                 .textFieldStyle(PlainTextFieldStyle())
                                 .padding(12)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                                 .background(Color.white)
                                 .cornerRadius(12)
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 12)
-                                        .stroke(Color(hex: "#E2E8F0"), lineWidth: 1)
+                                        .stroke(isAIFocused ? Color.nearPrimary.opacity(0.5) : Color(hex: "#E2E8F0"), lineWidth: 1)
                                 )
                                 .focused($isAIFocused)
+                                .contentShape(Rectangle())
+                                .onTapGesture { isAIFocused = true }
                                 .onSubmit {
                                     parseAI()
                                 }
@@ -112,15 +121,15 @@ struct AddCountdownView: View {
                     
                     // Name
                     FormGroup(label: "事件名称") {
-                        TextField("例如：项目上线", text: $name)
+                        TextField("给倒计时起个名字", text: $name)
                             .textFieldStyle(PlainTextFieldStyle())
                             .padding(12)
-                            .background(Color(hex: "#F8FAFC"))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color.white)
                             .cornerRadius(12)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 12)
-                                    .stroke(name.isEmpty ? Color(hex: "#6366F1") : Color(hex: "#E2E8F0"), lineWidth: 1)
-                            )
+                            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color(hex: "#E2E8F0"), lineWidth: 1))
+                            .contentShape(Rectangle())
+                            // No FocusState for 'name' yet, keeping it simple or adding if needed
                     }
                     
                     // Start Time (Custom Card)
@@ -134,23 +143,39 @@ struct AddCountdownView: View {
                     }
                     
                     // Icons
-                    FormGroup(label: "选择图标") {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("选择图标")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            Button(action: { withAnimation(.spring()) { isIconsExpanded.toggle() } }) {
+                                HStack(spacing: 4) {
+                                    Text(isIconsExpanded ? "收起" : "更多")
+                                    Image(systemName: isIconsExpanded ? "chevron.up" : "chevron.down")
+                                }
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundColor(.nearPrimary)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        
+                        if isIconsExpanded {
+                            let columns = [
+                                GridItem(.adaptive(minimum: 44), spacing: 12)
+                            ]
+                            LazyVGrid(columns: columns, alignment: .leading, spacing: 12) {
                                 ForEach(icons, id: \.self) { icon in
-                                    Button(action: { selectedIcon = icon }) {
-                                        Image(systemName: icon.sfSymbol)
-                                            .font(.system(size: 20))
-                                            .foregroundColor(selectedIcon == icon ? Color(hex: "#6366F1") : .gray)
-                                            .frame(width: 44, height: 44)
-                                            .background(selectedIcon == icon ? Color(hex: "#EEF2FF") : Color(hex: "#F8FAFC"))
-                                            .cornerRadius(12)
-                                            .overlay(
-                                                RoundedRectangle(cornerRadius: 12)
-                                                    .stroke(selectedIcon == icon ? Color(hex: "#6366F1") : .clear, lineWidth: 2)
-                                            )
+                                    iconButton(for: icon)
+                                }
+                            }
+                            .padding(.top, 4)
+                        } else {
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 12) {
+                                    ForEach(icons.prefix(6), id: \.self) { icon in
+                                        iconButton(for: icon)
                                     }
-                                    .buttonStyle(.plain)
                                 }
                             }
                         }
@@ -224,7 +249,25 @@ struct AddCountdownView: View {
         } else {
             countdownManager.addCountdown(event)
         }
-        isPresented = false
+        withAnimation(.spring(response: 0.55, dampingFraction: 0.85)) {
+            isPresented = false
+        }
+    }
+
+    private func iconButton(for icon: IconType) -> some View {
+        Button(action: { selectedIcon = icon }) {
+            Image(systemName: icon.sfSymbol)
+                .font(.system(size: 20))
+                .foregroundColor(selectedIcon == icon ? Color(hex: "#6366F1") : .gray)
+                .frame(width: 44, height: 44)
+                .background(selectedIcon == icon ? Color(hex: "#EEF2FF") : Color(hex: "#F8FAFC"))
+                .cornerRadius(12)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(selectedIcon == icon ? Color(hex: "#6366F1") : .clear, lineWidth: 2)
+                )
+        }
+        .buttonStyle(.plain)
     }
 }
 

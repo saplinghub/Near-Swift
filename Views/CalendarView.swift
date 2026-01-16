@@ -467,7 +467,7 @@ struct CalendarView: View {
     }
     
     private func refreshAlmanac() {
-        aiService.fetchAlmanac(date: Date())
+        aiService.fetchAlmanac()
             .sink(receiveCompletion: { _ in }, receiveValue: { response in
                 self.almanac = response
                 if let data = try? JSONEncoder().encode(response) {

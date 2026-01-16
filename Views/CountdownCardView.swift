@@ -4,6 +4,7 @@ struct CountdownCardView: View {
     @EnvironmentObject var countdownManager: CountdownManager
     let countdown: CountdownEvent
     var onEdit: (() -> Void)? = nil
+    var onDelete: (() -> Void)? = nil
     @State private var isHovered = false
 
     var body: some View {
@@ -119,7 +120,7 @@ struct CountdownCardView: View {
             // 右侧按钮组
             VStack(spacing: 8) {
                 Button(action: {
-                    countdownManager.deleteCountdown(countdown.id)
+                    onDelete?()
                 }) {
                     Image(systemName: "xmark")
                         .font(.system(size: 12))

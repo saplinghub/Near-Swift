@@ -1,22 +1,68 @@
 import Foundation
 
-struct AIConfig: Codable {
+enum AIFormat: String, Codable, CaseIterable {
+    case groq = "Groq"
+    case oneAPI = "OneAPI"
+}
+
+struct AIConfig: Codable, Identifiable, Equatable {
+    var id: UUID
+    var name: String
+    var format: AIFormat
     var baseURL: String
     var apiKey: String
     var model: String
-    var systemPrompt: String? // Added custom system prompt
+    var systemPrompt: String?
+
+    init(id: UUID = UUID(), name: String, format: AIFormat, baseURL: String, apiKey: String, model: String, systemPrompt: String? = nil) {
+        self.id = id
+        self.name = name
+        self.format = format
+        self.baseURL = baseURL
+        self.apiKey = apiKey
+        self.model = model
+        self.systemPrompt = systemPrompt
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, format, baseURL, apiKey, model, systemPrompt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        self.name = try container.decodeIfPresent(String.self, forKey: .name) ?? "默认配置"
+        self.format = try container.decodeIfPresent(AIFormat.self, forKey: .format) ?? .groq
+        self.baseURL = try container.decode(String.self, forKey: .baseURL)
+        self.apiKey = try container.decode(String.self, forKey: .apiKey)
+        self.model = try container.decode(String.self, forKey: .model)
+        self.systemPrompt = try container.decodeIfPresent(String.self, forKey: .systemPrompt)
+    }
 
     static func createDefault() -> AIConfig {
         AIConfig(
-            baseURL: "https://x666.me/v1",
+            id: UUID(),
+            name: "Groq 默认",
+            format: .groq,
+            baseURL: "https://api.groq.com/openai/v1",
             apiKey: "",
-            model: "gpt-4.1-mini",
-            systemPrompt: nil // Default to nil, will use built-in default if nil
+            model: "llama-3.3-70b-versatile",
+            systemPrompt: ""
         )
     }
 
     func isValid() -> Bool {
         !baseURL.isEmpty && !apiKey.isEmpty && !model.isEmpty
+    }
+}
+
+struct AIStorage: Codable {
+    var configs: [AIConfig]
+    var activeID: UUID
+    
+    static func createDefault() -> AIStorage {
+        let defaultConfig = AIConfig.createDefault()
+        return AIStorage(configs: [defaultConfig], activeID: defaultConfig.id)
     }
 }
 
