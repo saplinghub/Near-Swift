@@ -14,6 +14,7 @@ class StorageManager: ObservableObject {
     @Published var isHealthReminderEnabled: Bool = true
     @Published var isPetEnabled: Bool = true
     @Published var isWindmillEnabled: Bool = true
+    @Published var countdownSortMode: SortMode = .manual
 
     private let countdownsKey = "countdowns"
     private let aiStorageKey = "aiStorage"
@@ -28,6 +29,7 @@ class StorageManager: ObservableObject {
     private let isPetIntentAwarenessKey = "isPetIntentAwarenessEnabled"
     private let isHealthReminderKey = "isHealthReminderEnabled"
     private let isPetEnabledKey = "isPetEnabled"
+    private let countdownSortModeKey = "countdownSortMode"
 
     init() {
         loadAll()
@@ -92,6 +94,9 @@ class StorageManager: ObservableObject {
         self.isHealthReminderEnabled = UserDefaults.standard.object(forKey: isHealthReminderKey) as? Bool ?? true
         self.isPetEnabled = UserDefaults.standard.object(forKey: isPetEnabledKey) as? Bool ?? true
         self.isWindmillEnabled = UserDefaults.standard.object(forKey: "isWindmillEnabled") as? Bool ?? true
+        if let modeString = UserDefaults.standard.string(forKey: countdownSortModeKey), let mode = SortMode(rawValue: modeString) {
+            self.countdownSortMode = mode
+        }
     }
 
     func saveQWeatherKey() {
@@ -176,5 +181,10 @@ class StorageManager: ObservableObject {
     func saveGeneralSettings(isWindmillEnabled: Bool) {
         self.isWindmillEnabled = isWindmillEnabled
         UserDefaults.standard.set(isWindmillEnabled, forKey: "isWindmillEnabled")
+    }
+    
+    func saveSortMode(_ mode: SortMode) {
+        self.countdownSortMode = mode
+        UserDefaults.standard.set(mode.rawValue, forKey: countdownSortModeKey)
     }
 }

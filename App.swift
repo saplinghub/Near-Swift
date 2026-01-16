@@ -22,7 +22,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         Logger.shared.log("Initializing storage and managers...")
         let storageManager = StorageManager()
-        let countdownManager = CountdownManager() 
+        let countdownManager = CountdownManager(storageManager: storageManager) 
         let aiService = AIService(storageManager: storageManager)
         let systemMonitor = SystemMonitor()
 

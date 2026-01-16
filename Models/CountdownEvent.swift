@@ -1,5 +1,11 @@
 import Foundation
 
+enum SortMode: String, Codable, CaseIterable {
+    case manual = "手动"
+    case timeAsc = "时间最近"
+    case timeDesc = "时间最远"
+}
+
 struct CountdownEvent: Identifiable, Codable, Hashable {
     let id: UUID
     var name: String

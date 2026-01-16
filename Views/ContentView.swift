@@ -207,10 +207,10 @@ struct ContentView: View {
     private var activeCountdownsView: some View {
         ScrollView(showsIndicators: false) { // No scrollbar
             VStack(spacing: 16) {
-                // Pinned Item Section
-                if let pinned = countdownManager.pinnedCountdown {
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
+                // List Header: Pinned status + Sort Action
+                HStack {
+                    if let _ = countdownManager.pinnedCountdown {
+                        HStack(spacing: 4) {
                             Image(systemName: "pin.fill")
                                 .font(.system(size: 10))
                                 .foregroundColor(.nearPrimary)
@@ -218,16 +218,39 @@ struct ContentView: View {
                                 .font(.system(size: 12, weight: .bold))
                                 .foregroundColor(.nearSecondary)
                         }
-                        .padding(.leading, 4)
-                        
-                        CountdownCardView(countdown: pinned, onEdit: {
-                            editingCountdown = pinned
-                            showingAddView = true
-                        }, onDelete: {
-                            eventToDelete = pinned
-                            showingDeleteEventAlert = true
-                        })
                     }
+                    
+                    Spacer()
+                    
+                    // Sort Button
+                    Button(action: {
+                        withAnimation(.spring()) {
+                            countdownManager.toggleSortMode()
+                        }
+                    }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "arrow.up.arrow.down")
+                                .font(.system(size: 10))
+                                .foregroundColor(.nearPrimary)
+                            Text("排序")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundColor(.nearSecondary)
+                        }
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                    .help(sortHint)
+                }
+                .padding(.horizontal, 4)
+                .padding(.bottom, 4)
+
+                if let pinned = countdownManager.pinnedCountdown {
+                    CountdownCardView(countdown: pinned, onEdit: {
+                        editingCountdown = pinned
+                        showingAddView = true
+                    }, onDelete: {
+                        eventToDelete = pinned
+                        showingDeleteEventAlert = true
+                    })
                     .padding(.bottom, 12)
                 }
 
@@ -284,6 +307,14 @@ struct ContentView: View {
             .padding(.horizontal, 16)
             .padding(.bottom, 40) // Adjusted for minimal bar
             .padding(.top, 8)
+        }
+    }
+    
+    private var sortHint: String {
+        switch storageManager.countdownSortMode {
+        case .timeAsc: return "顺序 (按截止日期从近到远)"
+        case .timeDesc: return "倒序 (按截止日期从远到近)"
+        case .manual: return "还原 (手动排序模式)"
         }
     }
 }
