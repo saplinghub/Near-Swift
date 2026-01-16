@@ -8,10 +8,12 @@ class LogManager: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     
     private var logDirectory: URL {
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let dir = appSupport.appendingPathComponent("Near/Logs")
-        if !FileManager.default.fileExists(atPath: dir.path) {
-            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let fileManager = FileManager.default
+        let urls = fileManager.urls(for: .documentDirectory, in: .userDomainMask)
+        let docDir = urls.first!
+        let dir = docDir.appendingPathComponent("NearLogs")
+        if !fileManager.fileExists(atPath: dir.path) {
+            try? fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
         }
         return dir
     }
@@ -50,10 +52,11 @@ class LogManager: ObservableObject {
                 if let fileHandle = try? FileHandle(forWritingTo: fileURL) {
                     fileHandle.seekToEndOfFile()
                     fileHandle.write(data)
+                    try? fileHandle.synchronize() // 关键：确保物理落盘
                     fileHandle.closeFile()
                 }
             } else {
-                try? data.write(to: fileURL)
+                try? data.write(to: fileURL, options: .atomic)
             }
         }
     }

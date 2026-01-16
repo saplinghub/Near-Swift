@@ -29,10 +29,11 @@ class Logger {
                 if let fileHandle = try? FileHandle(forWritingTo: url) {
                     fileHandle.seekToEndOfFile()
                     fileHandle.write(data)
+                    try? fileHandle.synchronize() // 关键：确保物理写入磁盘
                     fileHandle.closeFile()
                 }
             } else {
-                try? data.write(to: url)
+                try? data.write(to: url, options: .atomic)
             }
         }
     }

@@ -12,8 +12,8 @@ struct BubbleContentView: View {
                     removal: .opacity
                 ))
         } else {
-            // 返回一个很小的点占位，避免窗口完全消失带来的布局抖动
-            Color.clear.frame(width: 1, height: 1)
+            // 使用空视图，配合 BubbleWindow 的 size 检查
+            Color.clear.frame(width: 260, height: 0)
         }
     }
     

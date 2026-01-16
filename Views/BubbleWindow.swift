@@ -35,42 +35,44 @@ class BubbleWindow: NSPanel {
     /// 当消息可见性改变时，刷新窗口大小并位置
     func updateSizeAndPosition(relativeTo petFrame: NSRect) {
         // 调度到主线程，且确保不在当前的 SwiftUI 布局事务中冲突
-        // 使用屏障（DispatchWorkItem）或简单的 async 确保独立性
         DispatchQueue.main.async { [weak self] in
             guard let self = self,
                   let hostingView = self.contentView as? NSHostingView<BubbleContentView> else { return }
             
-            // 节流处理
-            if Date().timeIntervalSince(self.lastUpdate) < 0.1 { return }
-            self.lastUpdate = Date()
-
-            // 关键：由于在 BubbleContentView 中锁定了宽度为 260，
-            // 直接读取 fittingSize 即可获得基于该宽度的稳定高度
-            let targetSize = hostingView.fittingSize
+            // 节流处理：0.1s 间隔
+            let now = Date()
+            if now.timeIntervalSince(self.lastUpdate) < 0.1 { return }
+            self.lastUpdate = now
             
-            // 如果高度太小，说明内容为空或被隐藏
-            if targetSize.height < 10 {
+            // 关键：SwiftUI 需要一个受限的宽度来计算合适的高度
+            // 我们通过直接给 hostingView 设定一个临时宽度约束，来获取准确的高度
+            let bubbleWidth: CGFloat = 260
+            let fittingSize = hostingView.fittingSize // 获取 SwiftUI 视图的自然尺寸
+            
+            // 过滤：如果高度几乎为 0，说明内容是空或被隐藏
+            if fittingSize.height < 10 {
                 if self.isVisible { self.orderOut(nil) }
                 return
             }
             
-            let bubbleWidth: CGFloat = 260
-            let bubbleHeight = targetSize.height
+            // 增加舍入处理，防止由于像素对齐导致的无限微量抖动（死循环诱因）
+            let bubbleHeight = ceil(fittingSize.height)
             
             // 计算位置：居中于宠物上方
-            let x = petFrame.midX - bubbleWidth / 2
-            let y = petFrame.maxY + 5
+            let x = floor(petFrame.midX - bubbleWidth / 2)
+            let y = floor(petFrame.maxY + 5)
             
             let targetFrame = NSRect(x: x, y: y, width: bubbleWidth, height: bubbleHeight)
             
-            // 只有当 Frame 发生显著改变（超过 1 像素）时才更新
-            if abs(self.frame.height - targetFrame.height) > 1.0 || 
-               abs(self.frame.origin.x - targetFrame.origin.x) > 1.0 ||
-               abs(self.frame.origin.y - targetFrame.origin.y) > 1.0 {
+            // 只有当 Frame 发生显著改变（超过 0.5 像素）时才更新
+            if abs(self.frame.size.height - targetFrame.size.height) > 0.5 || 
+               abs(self.frame.origin.x - targetFrame.origin.x) > 0.5 ||
+               abs(self.frame.origin.y - targetFrame.origin.y) > 0.5 {
                 
-                // 强制同步一次内部布局，防止 setFrame 触发重新测量
-                hostingView.setFrameSize(targetSize)
-                self.setFrame(targetFrame, display: true)
+                // 【核心修复】移除 hostingView.setFrameSize(targetSize)
+                // 在 macOS 中，作为 contentView 的 hostingView 会由 NSWindow 自动管理
+                // 手动干预往往是导致 Auto Layout Loop 的元凶
+                self.setFrame(targetFrame, display: true, animate: false)
             }
             
             if !self.isVisible {

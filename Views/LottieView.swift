@@ -19,14 +19,10 @@ struct LottieView: NSViewRepresentable {
         animationView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         animationView.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
         
-        if let path = Bundle.module.path(forResource: animationName, ofType: "json") {
-            animationView.animation = LottieAnimation.filepath(path)
-        } else if let path = Bundle.main.path(forResource: animationName, ofType: "json") {
-            animationView.animation = LottieAnimation.filepath(path)
-        } else if let path = Bundle.main.path(forResource: "NearCountdown_NearCountdown.bundle/\(animationName)", ofType: "json") {
+        if let path = ResourceBundle.current.path(forResource: animationName, ofType: "json") {
             animationView.animation = LottieAnimation.filepath(path)
         } else {
-            animationView.animation = LottieAnimation.named(animationName, bundle: .module)
+            animationView.animation = LottieAnimation.named(animationName, bundle: ResourceBundle.current)
         }
         
         animationView.contentMode = .scaleAspectFit
