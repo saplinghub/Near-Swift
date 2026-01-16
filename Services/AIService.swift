@@ -245,9 +245,14 @@ class AIService: ObservableObject {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.setValue("Bearer \(activeConfig.apiKey)", forHTTPHeaderField: "Authorization")
             
-            let dateStr = SharedUtils.dateFormatter(format: "yyyy年MM月dd日").string(from: Date())
+            let date = Date()
+            let formatter = SharedUtils.dateFormatter(format: "yyyy年MM月dd日")
+            let dateStr = formatter.string(from: date)
+            let lunarInfo = self.getLunarInfo(for: date)
+            
             let systemPrompt = """
-            你是一位经验丰富的黄历解说师。今天是\(dateStr)，请以传统钦天监老黄历的风格，生成今日完整黄历，并附上温暖治愈的现代解读。
+            你是一位经验丰富的黄历解说师。今天是\(dateStr)，农历日期为：\(lunarInfo.date)，干支为：\(lunarInfo.ganZhi)。
+            请以传统钦天监老黄历的风格，生成今日完整黄历，并附上温暖治愈的现代解读。
             
             你必须严格以 JSON 格式返回，且所有值必须为字符串 (String) 格式。包含以下字段：
             - date: 阳历 (yyyy-MM-dd)
@@ -336,5 +341,65 @@ class AIService: ObservableObject {
         }
         
         return cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func getLunarInfo(for date: Date) -> (date: String, ganZhi: String) {
+        let calendar = Calendar.current
+        let year = calendar.component(.year, from: date)
+        let month = calendar.component(.month, from: date)
+        let day = calendar.component(.day, from: date)
+        
+        let stems = ["甲", "乙", "丙", "丁", "戊", "己", "庚", "辛", "壬", "癸"]
+        let branches = ["子", "丑", "寅", "卯", "辰", "巳", "午", "未", "申", "酉", "戌", "亥"]
+        let sixtyCycle = ["甲子", "乙丑", "丙寅", "丁卯", "戊辰", "己巳", "庚午", "辛未", "壬申", "癸酉", "甲戌", "乙亥", "丙子", "丁丑", "戊寅", "己卯", "庚辰", "辛巳", "壬午", "癸未", "甲申", "乙酉", "丙戌", "丁亥", "戊子", "己丑", "庚寅", "辛卯", "壬辰", "癸巳", "甲午", "乙未", "丙申", "丁酉", "戊戌", "己亥", "庚子", "辛丑", "壬寅", "癸卯", "甲辰", "乙巳", "丙午", "丁未", "戊申", "己酉", "庚戌", "辛亥", "壬子", "癸丑", "甲寅", "乙卯", "丙辰", "丁巳", "戊午", "己未", "庚申", "辛酉", "壬戌", "癸亥"]
+
+        // 1. 农历月日 (汉字格式)
+        let chineseCalendar = Calendar(identifier: .chinese)
+        let lMonth = chineseCalendar.component(.month, from: date)
+        let lDay = chineseCalendar.component(.day, from: date)
+        let isLeap = chineseCalendar.dateComponents([.month], from: date).isLeapMonth ?? false
+        let chineseMonths = ["正月", "二月", "三月", "四月", "五月", "六月", "七月", "八月", "九月", "十月", "冬月", "腊月"]
+        let chineseDays = ["初一", "初二", "初三", "初四", "初五", "初六", "初七", "初八", "初九", "初十", 
+                           "十一", "十二", "十三", "十四", "十五", "十六", "十七", "十八", "十九", "二十", 
+                           "廿一", "廿二", "廿三", "廿四", "廿五", "廿六", "廿七", "廿八", "廿九", "三十"]
+        let lunarDate = (isLeap ? "闰" : "") + chineseMonths[(lMonth - 1) % 12] + chineseDays[(lDay - 1) % 30]
+
+        // 2. 确定节气月索引 (1-12, 1为寅月)
+        var solarMonthIdx = 0
+        let mmdd = month * 100 + day
+        if mmdd < 105 { solarMonthIdx = 11 } // 12月前段 (子月)
+        else if mmdd < 204 { solarMonthIdx = 12 } // 12月后段 (丑月)
+        else if mmdd < 305 { solarMonthIdx = 1 } // 1月 (寅月)
+        else if mmdd < 405 { solarMonthIdx = 2 } // 2月 (卯月)
+        else if mmdd < 505 { solarMonthIdx = 3 } // 3月 (辰月)
+        else if mmdd < 605 { solarMonthIdx = 4 } // 4月 (巳月)
+        else if mmdd < 707 { solarMonthIdx = 5 } // 5月 (午月)
+        else if mmdd < 807 { solarMonthIdx = 6 } // 6月 (未月)
+        else if mmdd < 907 { solarMonthIdx = 7 } // 7月 (申月)
+        else if mmdd < 1008 { solarMonthIdx = 8 } // 8月 (酉月)
+        else if mmdd < 1107 { solarMonthIdx = 9 } // 9月 (戌月)
+        else if mmdd < 1207 { solarMonthIdx = 10 } // 10月 (亥月)
+        else { solarMonthIdx = 11 } // 11月后段 (子月)
+
+        // 3. 干支年 (以立春为界)
+        var gzYear = year
+        if mmdd < 204 { gzYear -= 1 }
+        let yearIdx = (gzYear - 4) % 60
+        let effectiveYearIdx = yearIdx >= 0 ? yearIdx : yearIdx + 60
+        let yearGanzhi = sixtyCycle[effectiveYearIdx]
+        let yearStemIdx = effectiveYearIdx % 10
+
+        // 4. 干支月 (五虎遁)
+        let mStemIdx = (yearStemIdx % 5 * 2 + 2 + (solarMonthIdx - 1)) % 10
+        let mBranchIdx = (solarMonthIdx + 2 - 1) % 12
+        let monthGanzhi = stems[mStemIdx] + branches[mBranchIdx]
+
+        // 5. 干支日 (基准点偏移)
+        let refDate = calendar.date(from: DateComponents(year: 2000, month: 1, day: 1))!
+        let diff = calendar.dateComponents([.day], from: refDate, to: date).day ?? 0
+        let dIdx = (54 + diff) % 60
+        let dayGanzhi = sixtyCycle[dIdx >= 0 ? dIdx : dIdx + 60]
+
+        return (lunarDate, "\(yearGanzhi)年 \(monthGanzhi)月 \(dayGanzhi)日")
     }
 }
