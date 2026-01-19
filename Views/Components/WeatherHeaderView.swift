@@ -33,40 +33,43 @@ struct WeatherHeaderView: View {
                     .shadow(color: Color.black.opacity(0.04), radius: 5, x: 0, y: 2)
                 } else {
                     // Standard Mode - Enhanced Aesthetics
-                    HStack(spacing: 12) {
-                        // Left: Icon + Temp (Fixed Width to prevent squeezing center)
-                        HStack(spacing: 10) {
+                    // Standard Mode - Sophisticated Multi-Segment Layout
+                    HStack(alignment: .center, spacing: 0) {
+                        // 1. Core Weather (Fixed presence, flexible width)
+                        HStack(spacing: 12) {
                             ZStack {
                                 Circle()
-                                    .fill(LinearGradient(gradient: Gradient(colors: [Color.nearPrimary.opacity(0.1), Color.nearPrimary.opacity(0.02)]), startPoint: .topLeading, endPoint: .bottomTrailing))
-                                    .frame(width: 40, height: 40)
+                                    .fill(LinearGradient(gradient: Gradient(colors: [Color.nearPrimary.opacity(0.12), Color.nearPrimary.opacity(0.04)]), startPoint: .topLeading, endPoint: .bottomTrailing))
+                                    .frame(width: 42, height: 42)
                                 
                                 Image(systemName: weatherIcon(code: weather.current.icon))
                                     .font(.system(size: 20))
                                     .foregroundColor(.nearPrimary)
                             }
                             
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text("\(weather.current.temp)°")
-                                    .font(.system(size: 28, weight: .black))
-                                    .foregroundColor(.nearTextPrimary)
+                            VStack(alignment: .leading, spacing: 0) {
+                                HStack(alignment: .firstTextBaseline, spacing: 2) {
+                                    Text("\(weather.current.temp)")
+                                        .font(.system(size: 32, weight: .black))
+                                    Text("°")
+                                        .font(.system(size: 20, weight: .bold))
+                                }
+                                .foregroundColor(.nearTextPrimary)
                                 
                                 if let today = weather.forecast.first {
-                                    Text("\(today.tempMin)°/\(today.tempMax)°")
-                                        .font(.system(size: 10, weight: .medium))
-                                        .foregroundColor(.nearTextSecondary)
+                                    Text("\(today.tempMin)°/\(today.tempMax)° · \(weather.current.text)")
+                                        .font(.system(size: 10, weight: .bold))
+                                        .foregroundColor(.nearPrimary)
+                                        .lineLimit(1)
                                 }
-                                
-                                Text(weather.current.text)
-                                    .font(.system(size: 12, weight: .bold))
-                                    .foregroundColor(.nearPrimary)
                             }
                         }
-                        .frame(width: 90, alignment: .leading)
+                        .frame(minWidth: 100, alignment: .leading)
+                        .layoutPriority(2) // Core info gets highest priority
                         
-                        Divider().frame(height: 30)
+                        Divider().frame(height: 30).padding(.horizontal, 12)
                         
-                        // Center Area - Expansion Allowed
+                        // 2. Location & Forecast Summary (Flexible)
                         VStack(alignment: .leading, spacing: 4) {
                             HStack(spacing: 4) {
                                 Image(systemName: "location.fill")
@@ -75,47 +78,42 @@ struct WeatherHeaderView: View {
                                 Text(weather.cityName)
                                     .font(.system(size: 12, weight: .bold))
                                     .foregroundColor(.nearSecondary)
+                                    .lineLimit(1)
                             }
                             
                             if let summary = weather.minutelySummary {
                                 Text(summary)
                                     .font(.system(size: 10))
                                     .foregroundColor(.nearTextSecondary)
-                                    .lineLimit(1)
+                                    .lineLimit(2)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .multilineTextAlignment(.leading)
+                                    .help(summary) // Added hover tooltip for full content
                             }
                             
-                            HStack(spacing: 8) {
-                                // Air Quality from new airNow source
-                                if let air = weather.airNow {
-                                    Text(formatAirQuality(air.category))
-                                        .font(.system(size: 9, weight: .bold))
-                                        .padding(.horizontal, 6)
-                                        .padding(.vertical, 3)
-                                        .background(aqiColor(level: air.level).opacity(0.1))
-                                        .foregroundColor(aqiColor(level: air.level))
-                                        .cornerRadius(4)
-                                        .help("空气质量: \(air.category) (AQI: \(air.aqi))")
-                                }
-                                
-                                // UV (Now comes from daily forecast as indices/1d type 6 is removed, or check if still requested)
-                                // Actually, I removed type 6 from fetchIndices and didn't add uv back to header? 
-                                // User said: "生活建议不需要这么多，只需要四个即可，运动、穿衣、旅游、钓鱼"
-                                // And indices/1d?type=1,3,5,8 was requested. So UV isn't in indices anymore.
-                                // We can use UV from daily forecast if needed, but for now focus on Air Quality as requested.
+                            if let air = weather.airNow {
+                                Text(formatAirQuality(air.category))
+                                    .font(.system(size: 8, weight: .black))
+                                    .padding(.horizontal, 5)
+                                    .padding(.vertical, 2)
+                                    .background(aqiColor(level: air.level).opacity(0.1))
+                                    .foregroundColor(aqiColor(level: air.level))
+                                    .cornerRadius(3)
                             }
                         }
+                        .layoutPriority(1) // Middle content can shrink first
                         
-                        Spacer()
+                        Spacer(minLength: 12)
                         
-                        // Right: Forecast Mini
-                        HStack(spacing: 12) {
+                        // 3. Mini Forecast List
+                        HStack(spacing: 10) {
                             ForEach(weather.forecast.prefix(2)) { day in
                                 VStack(spacing: 4) {
                                     Text(dayLabel(for: day.fxDate))
                                         .font(.system(size: 9))
                                         .foregroundColor(.nearTextSecondary)
                                     Image(systemName: weatherIcon(code: day.iconDay))
-                                        .font(.system(size: 14))
+                                        .font(.system(size: 13))
                                         .foregroundColor(.nearPrimary.opacity(0.8))
                                     Text("\(day.tempMax)°")
                                         .font(.system(size: 10, weight: .semibold))
@@ -124,6 +122,7 @@ struct WeatherHeaderView: View {
                                 .frame(width: 32)
                             }
                         }
+                        .layoutPriority(0.5) // Right items are nice to have
                     }
                     .padding(16)
                     .background(.ultraThinMaterial.opacity(0.2)) // Unified glass effect
