@@ -12,6 +12,10 @@ struct CalendarView: View {
     @State private var selectedHoliday: HolidayInfo? = nil
     @State private var selectedCountdown: CountdownEvent? = nil
     @State private var cancellables = Set<AnyCancellable>()
+    @State private var isRefreshing = false
+    @State private var refreshMessage: String? = nil
+    @State private var pulseOpacity = 0.0
+    @State private var rotationDegree = 0.0
     
     // Holiday info with description
     struct HolidayInfo: Identifiable {
@@ -260,19 +264,91 @@ struct CalendarView: View {
                             LuckyBox(icon: "safari.fill", title: "开运位", value: almanac.luckyDirection, color: .blue)
                         }
                         
-                        // Refresh Button
-                        Button(action: { refreshAlmanac() }) {
-                            HStack(spacing: 6) {
-                                Image(systemName: "sparkles")
-                                Text("重推今日黄历")
+                        // Refresh Button with Aurora Glow & Logic
+                        VStack(spacing: 8) {
+                            Button(action: { refreshAlmanac() }) {
+                                HStack(spacing: 8) {
+                                    if isRefreshing {
+                                        if #available(macOS 14.0, *) {
+                                            Image(systemName: "sparkles")
+                                                .symbolEffect(.variableColor.iterative, options: .repeating)
+                                        } else {
+                                            Image(systemName: "sparkles")
+                                                .opacity(pulseOpacity)
+                                                .onAppear {
+                                                    withAnimation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true)) {
+                                                        pulseOpacity = 0.3
+                                                    }
+                                                }
+                                                .onDisappear {
+                                                    pulseOpacity = 1.0
+                                                }
+                                        }
+                                    } else {
+                                        Image(systemName: "sparkles")
+                                    }
+                                    Text(isRefreshing ? "正在根据星象推演..." : "重推今日黄历")
+                                }
+                                .font(.system(size: 14, weight: .bold))
+                                .padding(.horizontal, 24)
+                                .padding(.vertical, 12)
+                                .background(
+                                    ZStack {
+                                        Capsule()
+                                            .fill(Color.nearPrimary.opacity(isRefreshing ? 0.2 : 0.1))
+                                        
+                                        if isRefreshing {
+                                            // Flowing Aurora Border - Multi-layered for "colorful" effect
+                                            ZStack {
+                                                // 1. Cyan Glow Path
+                                                Capsule()
+                                                    .trim(from: rotationDegree / 360 - 0.2, to: rotationDegree / 360)
+                                                    .stroke(
+                                                        LinearGradient(colors: [.clear, Color(hex: "00F2FF"), Color(hex: "00F2FF").opacity(0.1)], startPoint: .trailing, endPoint: .leading),
+                                                        style: StrokeStyle(lineWidth: 3, lineCap: .round)
+                                                    )
+                                                
+                                                // 2. Purple Sparkle (Offset slightly)
+                                                Capsule()
+                                                    .trim(from: rotationDegree / 360 - 0.15, to: rotationDegree / 360 + 0.05)
+                                                    .stroke(
+                                                        LinearGradient(colors: [.clear, Color(hex: "AD00FF"), Color(hex: "AD00FF").opacity(0.1)], startPoint: .trailing, endPoint: .leading),
+                                                        style: StrokeStyle(lineWidth: 2.5, lineCap: .round)
+                                                    )
+                                                
+                                                // 3. Wide Soft Diffusion
+                                                Capsule()
+                                                    .trim(from: rotationDegree / 360 - 0.3, to: rotationDegree / 360)
+                                                    .stroke(
+                                                        AngularGradient(colors: [.clear, .nearPrimary.opacity(0.3), .clear], center: .center, angle: .degrees(rotationDegree)),
+                                                        lineWidth: 5
+                                                    )
+                                                    .blur(radius: 6)
+                                            }
+                                        }
+                                    }
+                                )
+                                .foregroundColor(.nearPrimary)
                             }
-                            .font(.system(size: 14, weight: .bold))
-                            .padding(.horizontal, 24)
-                            .padding(.vertical, 12)
-                            .background(Capsule().fill(Color.nearPrimary.opacity(0.1)))
-                            .foregroundColor(.nearPrimary)
+                            .buttonStyle(PlainButtonStyle())
+                            .disabled(isRefreshing)
+                            .onChange(of: isRefreshing) { newValue in
+                                if newValue {
+                                    withAnimation(.linear(duration: 2).repeatForever(autoreverses: false)) {
+                                        rotationDegree = 360
+                                    }
+                                } else {
+                                    rotationDegree = 0
+                                }
+                            }
+                            
+                            if let message = refreshMessage {
+                                Text(message)
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundColor(message.contains("完成") ? .nearPrimary.opacity(0.8) : .red.opacity(0.8))
+                                    .transition(.move(edge: .top).combined(with: .opacity))
+                            }
                         }
-                        .buttonStyle(PlainButtonStyle())
                         .padding(.top, 10)
                     }
                     .padding(.horizontal, 20)
@@ -653,8 +729,31 @@ struct CalendarView: View {
     }
     
     private func refreshAlmanac() {
+        guard !isRefreshing else { return }
+        isRefreshing = true
+        refreshMessage = nil
+        
+        // Simple haptic feedback for button click
+        #if canImport(AppKit)
+        NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .now)
+        #endif
+        
         aiService.fetchAlmanac()
-            .sink(receiveCompletion: { _ in }, receiveValue: { response in
+            .sink(receiveCompletion: { completion in
+                isRefreshing = false
+                withAnimation(.spring()) {
+                    if case .failure = completion {
+                        refreshMessage = "星象模糊，请稍后再试"
+                    } else {
+                        refreshMessage = "推演完成，运势已更新"
+                    }
+                }
+                
+                // Clear message after 3 seconds
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                    withAnimation { refreshMessage = nil }
+                }
+            }, receiveValue: { response in
                 self.almanac = response
                 if let data = try? JSONEncoder().encode(response) {
                     let key = "Almanac_" + DateFormatter.yyyyMMdd.string(from: Date())

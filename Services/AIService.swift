@@ -250,8 +250,9 @@ class AIService: ObservableObject {
             let dateStr = formatter.string(from: date)
             let lunarInfo = self.getLunarInfo(for: date)
             
+            let weekdayStr = SharedUtils.dateFormatter(format: "EEEE").string(from: date)
             let systemPrompt = """
-            你是一位经验丰富的黄历解说师。今天是\(dateStr)，农历日期为：\(lunarInfo.date)，干支为：\(lunarInfo.ganZhi)。
+            你是一位经验丰富的黄历解说师。今天是\(dateStr)，\(weekdayStr)，农历日期为：\(lunarInfo.date)，干支为：\(lunarInfo.ganZhi)。
             请以传统钦天监老黄历的风格，生成今日完整黄历，并附上温暖治愈的现代解读。
             
             你必须严格以 JSON 格式返回，且所有值必须为字符串 (String) 格式。包含以下字段：
