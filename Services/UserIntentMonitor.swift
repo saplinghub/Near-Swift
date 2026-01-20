@@ -52,8 +52,9 @@ class UserIntentMonitor: ObservableObject {
         
         let callback: CGEventTapCallBack = { (proxy, type, event, refcon) in
             if let ptr = refcon {
-                let mySelf = Unmanaged<UserIntentMonitor>.fromOpaque(ptr).takeUnretainedValue()
-                mySelf.counter += 1
+                // 暂时不去记录 inputFrequency 的值
+                // let mySelf = Unmanaged<UserIntentMonitor>.fromOpaque(ptr).takeUnretainedValue()
+                // mySelf.counter += 1
             }
             return Unmanaged.passRetained(event)
         }
@@ -74,15 +75,19 @@ class UserIntentMonitor: ObservableObject {
             }
         }
         
-        // 每分钟结算频率
-        timer = Timer.scheduledTimer(withTimeInterval: 60.0, repeats: true) { [weak self] _ in
-            guard let self = self else { return }
-            self.inputFrequency = self.counter
-            if self.counter > 0 {
-                self.recordLog(event: "Input Frequency: \(self.counter)/min")
-            }
-            self.counter = 0
+        // 仅在初始启动记录一次，不再每分钟刷新 Timer
+        // 改为按需查询或由上层触发清理
+    }
+    
+    /// 由 PetManager 在意图检查周期调用，用于结算频率并重置
+    func flushInputFrequency() -> Int {
+        let current = counter
+        self.inputFrequency = current
+        if current > 0 {
+            self.recordLog(event: "Input Frequency Settle: \(current) in period")
         }
+        self.counter = 0
+        return current
     }
     
     private func recordLog(event: String) {

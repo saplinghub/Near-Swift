@@ -9,13 +9,13 @@ class AIService: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     
     static let defaultSystemPrompt = """
-        你是一个智能倒计时事件解析助手。当前时间：{YEAR}年{MONTH}月{DAY}日。
+        你是一个智能倒计时事件解析助手。当前时间：{YEAR}年{MONTH}月{DAY}日{HOUR}时{MINUTE}分。
         核心规则：
         1. 意图理解：智能识别事件类型，自动推算目标日期，并润色事件名称。
         2. 数据结构：必须严格返回以下 JSON 格式：
         {
         "name": "事件名称",
-        "startDate": "YYYY-MM-DD",
+        "startDate": "YYYY-MM-DD HH:mm",
         "date": "YYYY-MM-DD HH:mm",
         "icon": "iconKey"
         }
@@ -33,9 +33,9 @@ class AIService: ObservableObject {
 
         示例参考：
         - 用户：过年倒计时
-        -> {"name":"春节倒计时🧧", "startDate":"2026-01-16", "date":"2027-01-29 00:00", "icon":"leaf"}
+        -> {"name":"春节倒计时🧧", "startDate":"2026-01-16 00:00", "date":"2027-01-29 00:00", "icon":"leaf"}
         - 用户：下周五下午3点项目上线
-        -> {"name":"项目上线🚀", "startDate":"2026-01-16", "date":"2026-01-23 15:00", "icon":"code"}
+        -> {"name":"项目上线🚀", "startDate":"2026-01-16 00:00", "date":"2026-01-23 15:00", "icon":"code"}
 
         输出强制要求 (Strict Constraints)：
         1. 禁止包含 <think> 标签或任何推理过程。
@@ -72,6 +72,8 @@ class AIService: ObservableObject {
             let currentYear = SharedUtils.dateFormatter(format: "yyyy").string(from: Date())
             let currentMonth = SharedUtils.dateFormatter(format: "MM").string(from: Date())
             let currentDay = SharedUtils.dateFormatter(format: "dd").string(from: Date())
+            let currentHour = SharedUtils.dateFormatter(format: "HH").string(from: Date())
+            let currentMinute = SharedUtils.dateFormatter(format: "mm").string(from: Date())
             let nextYear = String((Int(currentYear) ?? 2024) + 1)
             
             var systemPrompt = activeConfig.systemPrompt ?? AIService.defaultSystemPrompt
@@ -81,6 +83,8 @@ class AIService: ObservableObject {
                 .replacingOccurrences(of: "{YEAR}", with: currentYear)
                 .replacingOccurrences(of: "{MONTH}", with: currentMonth)
                 .replacingOccurrences(of: "{DAY}", with: currentDay)
+                .replacingOccurrences(of: "{HOUR}", with: currentHour)
+                .replacingOccurrences(of: "{MINUTE}", with: currentMinute)
                 .replacingOccurrences(of: "{NEXT_YEAR}", with: nextYear)
             
             var body: [String: Any] = [

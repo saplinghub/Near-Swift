@@ -92,6 +92,36 @@ class CountdownManager: ObservableObject {
         pinnedCountdown = allCountdowns.first { $0.isPinned }
         activeCountdowns = allCountdowns.filter { !$0.isCompleted && !$0.isPinned }
         completedCountdowns = allCountdowns.filter { $0.isCompleted && !$0.isPinned }
+        
+        // 【新增】检测刚过期的倒计时并触发通知
+        checkAndNotifyCompletedCountdowns()
+    }
+    
+    private func checkAndNotifyCompletedCountdowns() {
+        var updatedAny = false
+        for (index, countdown) in countdowns.enumerated() {
+            if countdown.isCompleted && !countdown.isNotified {
+                // 标记为已通知
+                countdowns[index].isNotified = true
+                updatedAny = true
+                
+                // 触发通知中心
+                let notification = NearNotification(
+                    message: "主人，倒计时「\(countdown.name)」到时间啦！⏰",
+                    type: .countdown,
+                    actions: [
+                        NearNotificationAction(id: "ack", title: "朕知道了", color: .nearPrimary)
+                    ],
+                    autoDismissDelay: 30.0
+                )
+                NotificationManager.shared.post(notification)
+            }
+        }
+        
+        if updatedAny {
+            storageManager.countdowns = self.countdowns
+            storageManager.saveCountdowns()
+        }
     }
 
     func addCountdown(_ countdown: CountdownEvent) {

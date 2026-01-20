@@ -18,12 +18,13 @@ struct CountdownEvent: Identifiable, Codable, Hashable {
     var icon: IconType
     var isPinned: Bool
     var order: Int
+    var isNotified: Bool
     
     // 存储属性以避免在 body 中重复执行昂贵的 DateFormatter (ICU) 计算
     private(set) var dateString: String = ""
     private(set) var dateRangeString: String = ""
 
-    init(id: UUID = UUID(), name: String, startDate: Date, targetDate: Date, icon: IconType, isPinned: Bool = false, order: Int = 0) {
+    init(id: UUID = UUID(), name: String, startDate: Date, targetDate: Date, icon: IconType, isPinned: Bool = false, order: Int = 0, isNotified: Bool = false) {
         self.id = id
         self.name = name
         self.startDate = startDate
@@ -31,6 +32,7 @@ struct CountdownEvent: Identifiable, Codable, Hashable {
         self.icon = icon
         self.isPinned = isPinned
         self.order = order
+        self.isNotified = false
         updateStaticStrings()
     }
     
@@ -44,6 +46,7 @@ struct CountdownEvent: Identifiable, Codable, Hashable {
         icon = try container.decode(IconType.self, forKey: .icon)
         isPinned = try container.decode(Bool.self, forKey: .isPinned)
         order = try container.decode(Int.self, forKey: .order)
+        isNotified = try container.decodeIfPresent(Bool.self, forKey: .isNotified) ?? false
         updateStaticStrings()
     }
 
@@ -109,7 +112,8 @@ struct CountdownEvent: Identifiable, Codable, Hashable {
             targetDate: SharedUtils.calendar.date(byAdding: .day, value: 7, to: Date()) ?? Date(),
             icon: .star,
             isPinned: false,
-            order: 0
+            order: 0,
+            isNotified: false
         )
     }
 
@@ -118,6 +122,6 @@ struct CountdownEvent: Identifiable, Codable, Hashable {
     }
     
     enum CodingKeys: String, CodingKey {
-        case id, name, startDate, targetDate, icon, isPinned, order
+        case id, name, startDate, targetDate, icon, isPinned, order, isNotified
     }
 }

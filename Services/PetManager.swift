@@ -40,6 +40,11 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
     private var lastNotificationTimes: [String: Date] = [:]
     private var lastDeepCheckTime: Date = .distantPast
     
+    // 【新增】分层调度时间戳
+    private var lastWeatherCheckTime: Date = .distantPast
+    private var lastHealthCheckTime: Date = .distantPast
+    private var lastIntentCheckTime: Date = .distantPast
+    
     // 通知等级定义
     enum NotificationLevel: Int {
         case critical = 1 // 健康提醒、气象灾害
@@ -52,10 +57,48 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
     }
     
     private var powerCancellables = Set<AnyCancellable>()
+    private var notificationCancellable: AnyCancellable?
     
     override private init() {
         super.init()
         setupPowerObservation()
+        setupNotificationObservation()
+    }
+    
+    private func setupNotificationObservation() {
+        NotificationManager.shared.$currentNotification
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] notification in
+                if let notification = notification {
+                    self?.displayNotification(notification)
+                } else {
+                    self?.model.isMessageVisible = false
+                }
+            }
+            .store(in: &powerCancellables)
+    }
+    
+    private func displayNotification(_ notification: NearNotification) {
+        // 1. 设置动作按钮
+        self.model.actions = notification.actions.map { action in
+            PetAction(id: action.id, title: action.title, color: action.color) {
+                NotificationManager.shared.triggerAction(action.id)
+            }
+        }
+        
+        // 2. 映射通知类型
+        let msgType: PetMessageType
+        switch notification.type {
+        case .system: msgType = .system
+        case .health: msgType = .health
+        case .power: msgType = .power
+        case .fun: msgType = .fun
+        case .weather: msgType = .weather
+        case .countdown: msgType = .health // 倒计时暂时映射至健康提醒风格
+        }
+        
+        // 3. 显示消息
+        saySomething(text: notification.message, type: msgType, isFromManager: true)
     }
     
     private func setupPowerObservation() {
@@ -134,9 +177,14 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
         
         // 延迟 1-3s 触发拟人化唤醒
         let delay = Double.random(in: 1.0...3.0)
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
             let quotes = ["朕又回来啦！刚才睡得真香~", "呼... 好梦初醒，开始干活！", "捕捉到你的操作啦，我在偷懒的时候你该不会也在摸鱼吧？", "信号恢复！ Near 准备就绪。"]
-            self?.notify(quotes.randomElement() ?? "我回来啦！", level: .important, type: .power)
+            let notification = NearNotification(
+                message: quotes.randomElement() ?? "我回来啦！",
+                type: .power,
+                autoDismissDelay: 5.0
+            )
+            NotificationManager.shared.post(notification)
         }
     }
     
@@ -161,10 +209,7 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
         self.intentMonitor = UserIntentMonitor.shared
         
         // 启动时同步持久化设置
-        let _ = UserDefaults.standard
-        // 静态模式：停用所有非必要的后台轮询以节省资源
-        self.monitor?.stopMonitoring()
-        self.intentMonitor = nil // 彻底停用意图追踪
+        // 静态模式优化：仅在非闲置时启动高频监控（逻辑已在 startMonitoring 中处理）
         
         startMonitoring()
     }
@@ -205,13 +250,33 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
     }
     
     private func updateState() {
-        // 移除 0.1s 的高频鼠标监听，改为被动感知
+        let now = Date()
+        
+        // 1. 实时级 (1.0s): 自我意识感知（随机散步逻辑）
         handleSelfAwareness() 
         
-        let now = Date()
-        if now.timeIntervalSince(lastDeepCheckTime) >= 3.0 {
+        // 2. 动态级 (30.0s): 系统负载检查
+        if now.timeIntervalSince(lastDeepCheckTime) >= 30.0 {
             updateSystemAwareness() 
             lastDeepCheckTime = now
+        }
+        
+        // 3. 意图级 (60.0s): 用户意图、应用切换感知
+        if now.timeIntervalSince(lastIntentCheckTime) >= 60.0 {
+            updateIntentAwareness()
+            lastIntentCheckTime = now
+        }
+        
+        // 4. 业务级 - 健康提醒 (600.0s / 10min)
+        if now.timeIntervalSince(lastHealthCheckTime) >= 600.0 {
+            updateHealthReminders()
+            lastHealthCheckTime = now
+        }
+        
+        // 5. 业务级 - 天气感知 (1800.0s / 30min)
+        if now.timeIntervalSince(lastWeatherCheckTime) >= 1800.0 {
+            updateWeatherInsights()
+            lastWeatherCheckTime = now
         }
     }
     
@@ -259,7 +324,12 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
                 quotes = ["哇！电脑要爆炸啦，快休息下！", "好烫好烫，你在跑仿真吗？", "我的光环都变红了，冷静点！"]
             }
             
-            notify(quotes.randomElement()!, level: .normal, type: .system)
+            let notification = NearNotification(
+                message: quotes.randomElement()!,
+                type: .system,
+                autoDismissDelay: 5.0
+            )
+            NotificationManager.shared.post(notification)
             lastNotifiedLevel = currentLevel
             model.lastSystemQuoteTime = now
         }
@@ -269,6 +339,9 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
     private func updateIntentAwareness() {
         guard model.isIntentAwarenessEnabled, let intent = intentMonitor else { return }
         let now = Date()
+        
+        // 结算并重置输入频率
+        let _ = intent.flushInputFrequency()
         
         // 互动 CD：2 分钟（防止频繁打扰）
         guard now.timeIntervalSince(lastIntentTime) > 120.0 else { return }
@@ -291,7 +364,7 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
             }
             
             if let q = quote {
-                notify(q, level: .normal, type: .interaction)
+                NotificationManager.shared.post(NearNotification(message: q, type: .fun))
                 lastIntentTime = now
                 return
             }
@@ -299,12 +372,11 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
         
         // 2. 复杂场景：活跃度与停留时间感知
         if intent.inputFrequency > 100 { // 高频输入（奋笔疾书）
-            notify(["主人手速惊人！我已经看呆了", "这就是传说中的盲打吗？强！"].randomElement()!, level: .normal, type: .interaction)
+            NotificationManager.shared.post(NearNotification(message: ["主人手速惊人！我已经看呆了", "这就是传说中的盲打吗？强！"].randomElement()!, type: .fun))
             lastIntentTime = now
         } else if intent.inputFrequency == 0 && now.timeIntervalSince(lastIntentTime) > 600.0 { // 长时间发呆
-             // 复杂操作通过 AI 模拟读心（这里模拟 AI 判断）
              let stayQuote = ["盯——这个页面盯着好久了，是在思考人生吗？", "发呆也是一种修行呢...", "主人掉线了吗？歪？"].randomElement()!
-             notify(stayQuote, level: .normal, type: .interaction)
+             NotificationManager.shared.post(NearNotification(message: stayQuote, type: .fun))
              lastIntentTime = now
         }
     }
@@ -321,7 +393,12 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
         if hour == 17 && minute >= 30 && minute <= 35 {
             if !isDailySummaryShown {
                 let summary = HealthManager.shared.generateDailySummary()
-                notify(summary, level: .critical, type: .health, duration: 15.0) 
+                let notification = NearNotification(
+                    message: summary,
+                    type: .health,
+                    autoDismissDelay: 15.0
+                )
+                NotificationManager.shared.post(notification)
                 isDailySummaryShown = true
             }
         } else if hour == 0 {
@@ -333,27 +410,27 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
         // 这里为了演示效果，可以缩短间隔，实际建议 1 小时
         let waterInterval: TimeInterval = 3600 // 1 小时
         if now.timeIntervalSince(lastWaterReminderTime) > waterInterval {
-            // 检查用户是否在忙 (意图感知有记录且活跃度不为 0)
-            if UserIntentMonitor.shared.inputFrequency > 5 {
-                showWaterReminder()
-                lastWaterReminderTime = now
-            }
+            showWaterReminder()
+            lastWaterReminderTime = now
         }
     }
     
     private func showWaterReminder() {
-        model.actions = [
-            PetAction(id: "water_done", title: "喝水了", color: .blue) { [weak self] in
-                HealthManager.shared.recordActivity(type: "water")
-                self?.saySomething(text: "好哒！主人真棒，继续保持哦~", duration: 3.0)
-                self?.model.actions = [] // 清空动作
-            },
-            PetAction(id: "water_later", title: "等一下", color: .gray) { [weak self] in
-                self?.saySomething(text: "那好吧，忙完这阵千万记得喝水呀！", duration: 3.0)
-                self?.model.actions = []
-            }
-        ]
-        notify("主人忙了好久了，喝杯暖水休息一下吧？💧", level: .critical, type: .health, duration: 10.0)
+        let notification = NearNotification(
+            message: "主人忙了好久了，喝杯暖水休息一下吧？💧",
+            type: .health,
+            actions: [
+                NearNotificationAction(id: "water_done", title: "喝水了", color: .blue) {
+                    HealthManager.shared.recordActivity(type: "water")
+                    NotificationManager.shared.post(NearNotification(message: "好哒！主人真棒，继续保持哦~", type: .health, autoDismissDelay: 3.0))
+                },
+                NearNotificationAction(id: "water_later", title: "等一下", color: .gray) {
+                    NotificationManager.shared.post(NearNotification(message: "那好吧，忙完这阵千万记得喝水呀！", type: .health, autoDismissDelay: 3.0))
+                }
+            ],
+            autoDismissDelay: 10.0
+        )
+        NotificationManager.shared.post(notification)
     }
     
     /// 调试接口：手动触发健康提醒测试
@@ -405,15 +482,18 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
             }
             
             let info = "\(greeting)！今天天气「\(weather.text)」，\(advice) ☁️"
-            model.actions = [
-                PetAction(id: "weather_ack", title: "朕知道了", color: .nearPrimary) { [weak self] in
-                    self?.isWeatherAckedToday = true
-                    self?.lastWeatherPromptDate = todayStr
-                    self?.saySomething(text: "好哒，那我就不打扰主人啦！", duration: 3.0)
-                    self?.model.actions = []
-                }
-            ]
-            notify(info, level: .important, type: .weather, duration: 15.0) // 这种长消息且带按钮的，保持长一点或根据逻辑消失
+            let notification = NearNotification(
+                message: info,
+                type: .weather,
+                actions: [
+                    NearNotificationAction(id: "weather_ack", title: "朕知道了", color: .nearPrimary) {
+                        self.isWeatherAckedToday = true
+                        NotificationManager.shared.post(NearNotification(message: "好哒，那我就不打扰主人啦！", type: .weather, autoDismissDelay: 3.0))
+                    }
+                ],
+                autoDismissDelay: 15.0
+            )
+            NotificationManager.shared.post(notification)
             lastWeatherAckTime = now
             lastWeatherPromptDate = todayStr
         }
@@ -431,7 +511,7 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
             }
             
             if let msg = burstMsg {
-                notify(msg, level: .important, type: .weather) // 纯提示消息，不带按钮
+                NotificationManager.shared.post(NearNotification(message: msg, type: .weather, autoDismissDelay: 5.0))
             }
         }
         
@@ -647,18 +727,14 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
         lastNotificationTimes[typeKey] = now
     }
     
-    func saySomething(text: String, type: PetMessageType = .fun, duration: TimeInterval? = nil) {
-        LogManager.shared.append("[PET-SAY] Text: \(text), Type: \(type.rawValue)")
-        
-        // 默认逻辑：如果不是主动设置了交互 actions，则清空按钮
-        // 增加匹配范围：涵盖喝水、站立、天气问候、每日总结等必要交互
-        let keywords = ["水", "腰", "站", "早", "午", "晚", "深", "知道了", "总结", "天气"]
-        let hasKeywords = keywords.contains { text.contains($0) }
-        let isInteractive = !model.actions.isEmpty && hasKeywords
-        
-        if !isInteractive {
+    func saySomething(text: String, type: PetMessageType = .fun, duration: TimeInterval? = nil, isFromManager: Bool = false) {
+        // 如果不是来自 NotificationManager，且没有显式的 isFromManager，则需要清空按钮
+        // 这通常是内部拟人化短句（如散步后的感慨）
+        if !isFromManager {
             model.actions = []
         }
+        
+        LogManager.shared.append("[PET-SAY] Text: \(text), Type: \(type.rawValue)")
         
         // 设置消息类型
         model.messageType = type
@@ -675,15 +751,17 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
         model.message = text
         model.messageId = UUID()
         
-        // 根据字数计算时间：默认 5 秒内
-        let baseDuration = 1.5 + Double(text.count) * 0.1
-        let displayDuration = duration ?? min(5.0, baseDuration)
-        
         withAnimation { model.isMessageVisible = true }
         
-        messageTimer?.invalidate()
-        messageTimer = Timer.scheduledTimer(withTimeInterval: displayDuration, repeats: false) { [weak self] _ in
-            withAnimation { self?.model.isMessageVisible = false }
+        // 注意：如果是通过 NotificationManager 来的，自动消失由其管理，这里不启动自身的 timer
+        if !isFromManager {
+            let baseDuration = 1.5 + Double(text.count) * 0.1
+            let displayDuration = duration ?? min(5.0, baseDuration)
+            
+            messageTimer?.invalidate()
+            messageTimer = Timer.scheduledTimer(withTimeInterval: displayDuration, repeats: false) { [weak self] _ in
+                withAnimation { self?.model.isMessageVisible = false }
+            }
         }
     }
     

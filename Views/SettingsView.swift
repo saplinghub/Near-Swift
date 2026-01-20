@@ -814,7 +814,7 @@ struct SettingsView: View {
                     HStack {
                         Text("版本")
                         Spacer()
-                        Text("v1.3.0")
+                        Text("v1.3.1")
                             .foregroundColor(.nearTextSecondary)
                     }
                     Divider()
