@@ -11,7 +11,7 @@ class AIService: ObservableObject {
     static let defaultSystemPrompt = """
         你是一个智能倒计时事件解析助手。当前时间：{YEAR}年{MONTH}月{DAY}日{HOUR}时{MINUTE}分。
         核心规则：
-        1. 意图理解：智能识别事件类型，自动推算目标日期，并润色事件名称。
+        1. 意图理解：智能识别事件类型，自动推算目标日期，并润色事件名称，事件名称简洁有趣，可加emoji。
         2. 数据结构：必须严格返回以下 JSON 格式：
         {
         "name": "事件名称",

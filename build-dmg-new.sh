@@ -9,7 +9,6 @@ BUNDLE_IDENTIFIER="com.near.countdown"
 BUILD_DIR=".build/release"
 DMG_DIR="dist"
 VERSION=$(date +%Y%m%d)
-BUNDLE_NAME="${ORIGINAL_BINARY_NAME}_NearCountdown.bundle"  # SPM 自动生成的 bundle 名，通常是 TargetName_TargetName.bundle
 
 echo "🚀 Building Near Countdown for macOS (纯命令行模式)..."
 
@@ -35,22 +34,37 @@ cp "$BUILD_DIR/$ORIGINAL_BINARY_NAME" "$APP_BUNDLE/Contents/MacOS/$ORIGINAL_BINA
 echo "📦 Copying Frameworks (if any)..."
 find -L "$BUILD_DIR" -name "*.framework" -type d -exec cp -R {} "$APP_BUNDLE/Contents/Frameworks/" \;
 
-# 4. Copy SPM resource bundle (关键：确保拷贝到 Contents/Resources/ 下)
-echo "📦 Locating and copying resource bundle..."
-RESOURCE_BUNDLE_PATH=$(find -L "$BUILD_DIR" -name "*${ORIGINAL_BINARY_NAME}*.bundle" -type d | head -n 1)
+# 4. Copy SPM resource bundles (关键：全部拷贝到 Contents/Resources/ 下)
+echo "📦 Locating and copying resource bundles..."
+RESOURCE_BUNDLES=$(find -L "$BUILD_DIR" -name "*.bundle" -type d)
 
-if [ -n "$RESOURCE_BUNDLE_PATH" ]; then
-    echo "   Found bundle: $RESOURCE_BUNDLE_PATH"
-    cp -r "$RESOURCE_BUNDLE_PATH" "$APP_BUNDLE/Contents/Resources/"
+if [ -n "$RESOURCE_BUNDLES" ]; then
+    while IFS= read -r bundlePath; do
+        [ -z "$bundlePath" ] && continue
+        echo "   Found bundle: $bundlePath"
+        cp -R "$bundlePath" "$APP_BUNDLE/Contents/Resources/"
+    done <<< "$RESOURCE_BUNDLES"
 else
-    echo "⚠️  Warning: No resource bundle found in $BUILD_DIR. If you have resources, check Package.swift."
+    echo "❌ Error: No .bundle resources found in $BUILD_DIR"
+    exit 1
 fi
 
 # 4.1 Copy manual Resources folder (如果有额外资源)
 if [ -d "Sources/$ORIGINAL_BINARY_NAME/Resources" ] || [ -d "Resources" ]; then
     echo "📦 Copying additional Resources..."
-    cp -r Sources/"$ORIGINAL_BINARY_NAME"/Resources/* "$APP_BUNDLE/Contents/Resources/" 2>/dev/null || true
-    cp -r Resources/* "$APP_BUNDLE/Contents/Resources/" 2>/dev/null || true
+fi
+
+if [ -d "Sources/$ORIGINAL_BINARY_NAME/Resources" ]; then
+    cp -R "Sources/$ORIGINAL_BINARY_NAME/Resources/." "$APP_BUNDLE/Contents/Resources/"
+fi
+
+if [ -d "Resources" ]; then
+    cp -R "Resources/." "$APP_BUNDLE/Contents/Resources/"
+fi
+
+if [ ! -d "$APP_BUNDLE/Contents/Resources/icons" ] || [ ! -d "$APP_BUNDLE/Contents/Resources/lottie" ]; then
+    echo "❌ Error: Required resources missing (icons/lottie) in app bundle"
+    exit 1
 fi
 
 # 5. Create Info.plist (添加更多键，让 macOS 更好识别)

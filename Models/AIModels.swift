@@ -115,8 +115,14 @@ struct AIContentResponse: Codable {
         guard let finalTargetDate = targetDate else { return nil }
 
         let startDateValue: Date
-        if let startDateStr = startDate, let parsedStartDate = SharedUtils.dateFormatter(format: "yyyy-MM-dd").date(from: startDateStr) {
-            startDateValue = parsedStartDate
+        if let startDateStr = startDate {
+            if let parsedStartDateWithTime = SharedUtils.dateFormatter(format: "yyyy-MM-dd HH:mm").date(from: startDateStr) {
+                startDateValue = parsedStartDateWithTime
+            } else if let parsedStartDate = SharedUtils.dateFormatter(format: "yyyy-MM-dd").date(from: startDateStr) {
+                startDateValue = parsedStartDate
+            } else {
+                startDateValue = SharedUtils.now
+            }
         } else {
             startDateValue = SharedUtils.now
         }
