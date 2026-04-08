@@ -3,6 +3,7 @@ import Foundation
 enum AIFormat: String, Codable, CaseIterable {
     case groq = "Groq"
     case oneAPI = "OneAPI"
+    case anthropic = "Anthropic"
 }
 
 struct AIConfig: Codable, Identifiable, Equatable {
@@ -75,6 +76,96 @@ struct OpenAIChatResponse: Codable {
         let message: Message
     }
     let choices: [Choice]
+}
+
+// Wrapper for Anthropic API Response
+struct AnthropicChatResponse: Codable {
+    struct Content: Codable {
+        let text: String
+    }
+
+    // Handle content that may be:
+    // 1. [{"type": "text", "text": "..."}]
+    // 2. [{"type": "thinking", "thinking": "..."}, {"type": "text", "text": "..."}] (MiniMax)
+    // 3. [{"type": "text", "text": "..."}] (standard)
+    // 4. "direct string"
+    let content: [Content]?
+
+    enum CodingKeys: String, CodingKey {
+        case content
+    }
+
+    enum RawContentItem: Codable {
+        case text(String)
+        case thinking(String)
+        case unknown
+
+        enum CodingKeys: String, CodingKey {
+            case type, text, thinking
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            let type = try container.decodeIfPresent(String.self, forKey: .type)
+            switch type {
+            case "text":
+                let text = try container.decode(String.self, forKey: .text)
+                self = .text(text)
+            case "thinking":
+                if let thinking = try? container.decode(String.self, forKey: .thinking) {
+                    self = .thinking(thinking)
+                } else {
+                    self = .unknown
+                }
+            default:
+                self = .unknown
+            }
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            switch self {
+            case .text(let s):
+                try container.encode("text", forKey: .type)
+                try container.encode(s, forKey: .text)
+            case .thinking(let s):
+                try container.encode("thinking", forKey: .type)
+                try container.encode(s, forKey: .thinking)
+            case .unknown:
+                try container.encode("unknown", forKey: .type)
+            }
+        }
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+
+        // Try to decode as [Content] directly
+        if let contentArray = try? container.decode([Content].self, forKey: .content) {
+            self.content = contentArray
+            return
+        }
+
+        // Try: decode as array of raw items and extract only text (skip thinking)
+        if let rawItems = try? container.decode([RawContentItem].self, forKey: .content) {
+            var texts: [Content] = []
+            for item in rawItems {
+                if case .text(let s) = item {
+                    texts.append(Content(text: s))
+                }
+            }
+            self.content = texts.isEmpty ? nil : texts
+            return
+        }
+
+        // Fallback: try to decode as plain string
+        if let contentString = try? container.decode(String.self, forKey: .content) {
+            self.content = [Content(text: contentString)]
+            return
+        }
+
+        self.content = nil
+    }
 }
 
 // The actual content we expect from the AI

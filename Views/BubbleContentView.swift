@@ -3,7 +3,7 @@ import SwiftUI
 /// 专门负责渲染消息气泡内容的视图
 struct BubbleContentView: View {
     @ObservedObject var model: PetModel
-    
+
     var body: some View {
         if model.isMessageVisible {
             bubbleContent(text: model.message)
@@ -12,11 +12,10 @@ struct BubbleContentView: View {
                     removal: .opacity
                 ))
         } else {
-            // 使用空视图，配合 BubbleWindow 的 size 检查
             Color.clear.frame(width: 260, height: 0)
         }
     }
-    
+
     @ViewBuilder
     private func bubbleContent(text: String) -> some View {
         VStack(spacing: 8) {
@@ -26,9 +25,9 @@ struct BubbleContentView: View {
                     Label(model.messageType.displayName, systemImage: model.messageType.iconName)
                         .font(.system(size: 12, weight: .bold))
                         .foregroundColor(colorForType(model.messageType))
-                    
+
                     Spacer()
-                    
+
                     Button(action: {
                         withAnimation { model.isMessageVisible = false }
                     }) {
@@ -37,15 +36,15 @@ struct BubbleContentView: View {
                     }
                     .buttonStyle(.plain)
                 }
-                
+
                 // 内容文本
                 Text(text)
                     .font(.system(size: 14, weight: .medium, design: .rounded))
                     .foregroundColor(.primary)
-                    .fixedSize(horizontal: false, vertical: true) // 允许垂直换行
+                    .fixedSize(horizontal: false, vertical: true)
                     .lineLimit(5)
                     .frame(minHeight: 20)
-                
+
                 if !model.actions.isEmpty {
                     HStack(spacing: 12) {
                         ForEach(model.actions) { action in
@@ -77,7 +76,7 @@ struct BubbleContentView: View {
                         .stroke(Color.white.opacity(0.5), lineWidth: 1)
                 }
             )
-            
+
             // 气泡尖角
             Image(systemName: "triangle.fill")
                 .resizable()
@@ -87,7 +86,7 @@ struct BubbleContentView: View {
                 .offset(y: -1)
                 .shadow(color: .black.opacity(0.05), radius: 2, y: 2)
         }
-        .frame(width: 260) // 锁定宽度，彻底防止水平方向的布局抖动和死循环
+        .frame(width: 260)
     }
 
     private func colorForType(_ type: PetMessageType) -> Color {

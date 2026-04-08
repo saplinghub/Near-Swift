@@ -1247,29 +1247,46 @@ struct AIConfigSheet: View {
     private func testConnection() {
         isTesting = true
         testMessage = nil
-        
-        // This is a bit tricky because AIService uses storageManager.activeAIConfig
-        // For testing a non-active config, we'd need to modify AIService
-        // Since we are in a sheet, let's keep it simple for now and just check if we can reach the URL
-        guard let url = URL(string: "\(baseURL.isEmpty && format == .groq ? "https://api.groq.com/openai/v1" : baseURL)/chat/completions") else {
+
+        let base: String
+        let endpoint: String
+
+        switch format {
+        case .anthropic:
+            base = baseURL.isEmpty ? "https://api.anthropic.com" : baseURL
+            endpoint = "/v1/messages"
+        case .groq:
+            base = baseURL.isEmpty ? "https://api.groq.com/openai/v1" : baseURL
+            endpoint = "/chat/completions"
+        case .oneAPI:
+            base = baseURL
+            endpoint = "/chat/completions"
+        }
+
+        guard let url = URL(string: "\(base)\(endpoint)") else {
             isTesting = false
             testMessage = "URL 无效"
             return
         }
-        
+
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        
-        let body: [String: Any] = [
+
+        var body: [String: Any] = [
             "model": model,
-            "messages": [["role": "user", "content": "hi"]],
-            "max_tokens": 5
+            "messages": [["role": "user", "content": "hi"]]
         ]
-        
+
+        if format == .anthropic {
+            body["max_tokens"] = 10
+        } else {
+            body["max_tokens"] = 5
+        }
+
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
-        
+
         URLSession.shared.dataTask(with: request) { data, response, error in
             DispatchQueue.main.async {
                 isTesting = false

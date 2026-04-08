@@ -57,8 +57,22 @@ class AIService: ObservableObject {
         return Future<CountdownEvent?, Error> { [weak self] promise in
             guard let self = self else { return }
             let activeConfig = self.storageManager.activeAIConfig
-            let base = activeConfig.baseURL.isEmpty && activeConfig.format == .groq ? "https://api.groq.com/openai/v1" : activeConfig.baseURL
-            guard let url = URL(string: "\(base)/chat/completions") else {
+            let base: String
+            let endpoint: String
+
+            switch activeConfig.format {
+            case .anthropic:
+                base = activeConfig.baseURL.isEmpty ? "https://api.anthropic.com" : activeConfig.baseURL
+                endpoint = "/v1/messages"
+            case .groq:
+                base = activeConfig.baseURL.isEmpty ? "https://api.groq.com/openai/v1" : activeConfig.baseURL
+                endpoint = "/chat/completions"
+            case .oneAPI:
+                base = activeConfig.baseURL
+                endpoint = "/chat/completions"
+            }
+
+            guard let url = URL(string: "\(base)\(endpoint)") else {
                 self.isLoading = false
                 promise(.failure(NSError(domain: "Invalid URL", code: 0)))
                 return
@@ -75,10 +89,10 @@ class AIService: ObservableObject {
             let currentHour = SharedUtils.dateFormatter(format: "HH").string(from: Date())
             let currentMinute = SharedUtils.dateFormatter(format: "mm").string(from: Date())
             let nextYear = String((Int(currentYear) ?? 2024) + 1)
-            
+
             var systemPrompt = activeConfig.systemPrompt ?? AIService.defaultSystemPrompt
             if systemPrompt.isEmpty { systemPrompt = AIService.defaultSystemPrompt }
-            
+
             systemPrompt = systemPrompt
                 .replacingOccurrences(of: "{YEAR}", with: currentYear)
                 .replacingOccurrences(of: "{MONTH}", with: currentMonth)
@@ -86,7 +100,7 @@ class AIService: ObservableObject {
                 .replacingOccurrences(of: "{HOUR}", with: currentHour)
                 .replacingOccurrences(of: "{MINUTE}", with: currentMinute)
                 .replacingOccurrences(of: "{NEXT_YEAR}", with: nextYear)
-            
+
             var body: [String: Any] = [
                 "model": activeConfig.model,
                 "messages": [
@@ -95,11 +109,13 @@ class AIService: ObservableObject {
                 ],
                 "temperature": 0.3
             ]
-            
-            if activeConfig.format == .groq {
+
+            if activeConfig.format == .anthropic {
+                body["max_tokens"] = 1024
+            } else if activeConfig.format == .groq {
                 body["include_reasoning"] = false
             }
-            
+
             do {
                 let bodyData = try JSONSerialization.data(withJSONObject: body, options: .prettyPrinted)
                 request.httpBody = bodyData
@@ -120,14 +136,26 @@ class AIService: ObservableObject {
                     }
                     return data
                 }
-                .decode(type: OpenAIChatResponse.self, decoder: JSONDecoder())
-                .tryMap { response -> Data in
-                    guard let content = response.choices.first?.message.content else {
-                         throw NSError(domain: "AI Error", code: -1)
+                .tryMap { data -> String in
+                    switch activeConfig.format {
+                    case .anthropic:
+                        let response = try JSONDecoder().decode(AnthropicChatResponse.self, from: data)
+                        guard let content = response.content?.first?.text else {
+                            throw NSError(domain: "AI Error", code: -1)
+                        }
+                        LogManager.shared.append("[AI Response] Content: \(content)")
+                        return self.cleanAIContent(content)
+                    default:
+                        let response = try JSONDecoder().decode(OpenAIChatResponse.self, from: data)
+                        guard let content = response.choices.first?.message.content else {
+                            throw NSError(domain: "AI Error", code: -1)
+                        }
+                        LogManager.shared.append("[AI Response] Content: \(content)")
+                        return self.cleanAIContent(content)
                     }
-                    LogManager.shared.append("[AI Response] Content: \(content)")
-                    let cleanedContent = self.cleanAIContent(content)
-                    return cleanedContent.data(using: .utf8) ?? Data()
+                }
+                .tryMap { content -> Data in
+                    return content.data(using: .utf8) ?? Data()
                 }
                 .decode(type: AIContentResponse.self, decoder: JSONDecoder())
                 .map { $0.toCountdownEvent() }
@@ -154,22 +182,36 @@ class AIService: ObservableObject {
     func analyzeLogs(content: String, logType: String) -> AnyPublisher<String, Error> {
         self.isLoading = true
         errorMessage = nil
-        
+
         return Future<String, Error> { [weak self] promise in
             guard let self = self else { return }
             let activeConfig = self.storageManager.activeAIConfig
-            let base = activeConfig.baseURL.isEmpty && activeConfig.format == .groq ? "https://api.groq.com/openai/v1" : activeConfig.baseURL
-            guard let url = URL(string: "\(base)/chat/completions") else {
+            let base: String
+            let endpoint: String
+
+            switch activeConfig.format {
+            case .anthropic:
+                base = activeConfig.baseURL.isEmpty ? "https://api.anthropic.com" : activeConfig.baseURL
+                endpoint = "/v1/messages"
+            case .groq:
+                base = activeConfig.baseURL.isEmpty ? "https://api.groq.com/openai/v1" : activeConfig.baseURL
+                endpoint = "/chat/completions"
+            case .oneAPI:
+                base = activeConfig.baseURL
+                endpoint = "/chat/completions"
+            }
+
+            guard let url = URL(string: "\(base)\(endpoint)") else {
                 self.isLoading = false
                 promise(.failure(NSError(domain: "Invalid URL", code: 0)))
                 return
             }
-            
+
             var request = URLRequest(url: url)
             request.httpMethod = "POST"
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.setValue("Bearer \(activeConfig.apiKey)", forHTTPHeaderField: "Authorization")
-            
+
             let systemPrompt = "你是一个桌宠助手，请分析用户的「\(logType)」日志并给出 30 字以内的毒舌点评。"
             var body: [String: Any] = [
                 "model": activeConfig.model,
@@ -179,14 +221,16 @@ class AIService: ObservableObject {
                 ],
                 "temperature": 0.5
             ]
-            
-            if activeConfig.format == .groq {
+
+            if activeConfig.format == .anthropic {
+                body["max_tokens"] = 256
+            } else if activeConfig.format == .groq {
                 body["include_reasoning"] = false
             }
-            
-            do { 
+
+            do {
                 let bodyData = try JSONSerialization.data(withJSONObject: body, options: .prettyPrinted)
-                request.httpBody = bodyData 
+                request.httpBody = bodyData
                 if let bodyString = String(data: bodyData, encoding: .utf8) {
                     LogManager.shared.append("[AI Request] Log Analyze, Body: \(bodyString)")
                 }
@@ -195,26 +239,32 @@ class AIService: ObservableObject {
                 promise(.failure(error))
                 return
             }
-            
+
             URLSession.shared.dataTaskPublisher(for: request)
-                .tryMap { data, _ in data }
-                .decode(type: OpenAIChatResponse.self, decoder: JSONDecoder())
-                .map { response in
-                    let content = response.choices.first?.message.content ?? "分析失败"
-                    return self.cleanAIContent(content)
+                .tryMap { data, _ -> String in
+                    switch activeConfig.format {
+                    case .anthropic:
+                        let response = try JSONDecoder().decode(AnthropicChatResponse.self, from: data)
+                        let content = response.content?.first?.text ?? "分析失败"
+                        return self.cleanAIContent(content)
+                    default:
+                        let response = try JSONDecoder().decode(OpenAIChatResponse.self, from: data)
+                        let content = response.choices.first?.message.content ?? "分析失败"
+                        return self.cleanAIContent(content)
+                    }
                 }
                 .receive(on: DispatchQueue.main)
                 .sink(
                     receiveCompletion: { completion in
                         self.isLoading = false
-                        if case .failure(let error) = completion { 
+                        if case .failure(let error) = completion {
                             LogManager.shared.append("[AI Error] Log Analyze Failed: \(error.localizedDescription)")
-                            promise(.failure(error)) 
+                            promise(.failure(error))
                         }
                     },
-                    receiveValue: { (result: String) in 
+                    receiveValue: { (result: String) in
                         LogManager.shared.append("[AI Response] Log Analyze Success: \(result)")
-                        promise(.success(result)) 
+                        promise(.success(result))
                     }
                 )
                 .store(in: &self.cancellables)
@@ -233,32 +283,46 @@ class AIService: ObservableObject {
     func fetchAlmanac() -> AnyPublisher<AlmanacResponse, Error> {
         self.isLoading = true
         errorMessage = nil
-        
+
         return Future<AlmanacResponse, Error> { [weak self] promise in
             guard let self = self else { return }
             let activeConfig = self.storageManager.activeAIConfig
-            let base = activeConfig.baseURL.isEmpty && activeConfig.format == .groq ? "https://api.groq.com/openai/v1" : activeConfig.baseURL
-            guard let url = URL(string: "\(base)/chat/completions") else {
+            let base: String
+            let endpoint: String
+
+            switch activeConfig.format {
+            case .anthropic:
+                base = activeConfig.baseURL.isEmpty ? "https://api.anthropic.com" : activeConfig.baseURL
+                endpoint = "/v1/messages"
+            case .groq:
+                base = activeConfig.baseURL.isEmpty ? "https://api.groq.com/openai/v1" : activeConfig.baseURL
+                endpoint = "/chat/completions"
+            case .oneAPI:
+                base = activeConfig.baseURL
+                endpoint = "/chat/completions"
+            }
+
+            guard let url = URL(string: "\(base)\(endpoint)") else {
                 self.isLoading = false
                 promise(.failure(NSError(domain: "Invalid URL", code: 0)))
                 return
             }
-            
+
             var request = URLRequest(url: url)
             request.httpMethod = "POST"
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.setValue("Bearer \(activeConfig.apiKey)", forHTTPHeaderField: "Authorization")
-            
+
             let date = Date()
             let formatter = SharedUtils.dateFormatter(format: "yyyy年MM月dd日")
             let dateStr = formatter.string(from: date)
             let lunarInfo = self.getLunarInfo(for: date)
-            
+
             let weekdayStr = SharedUtils.dateFormatter(format: "EEEE").string(from: date)
             let systemPrompt = """
             你是一位经验丰富的黄历解说师。今天是\(dateStr)，\(weekdayStr)，农历日期为：\(lunarInfo.date)，干支为：\(lunarInfo.ganZhi)。
             请以传统钦天监老黄历的风格，生成今日完整黄历，并附上温暖治愈的现代解读。
-            
+
             你必须严格以 JSON 格式返回，且所有值必须为字符串 (String) 格式。包含以下字段：
             - date: 阳历 (yyyy-MM-dd)
             - lunarDate: 准确农历日期
@@ -275,7 +339,7 @@ class AIService: ObservableObject {
             - luckyColor: 幸运颜色
             - luckyNumber: 幸运数字 (字符串格式)
             - luckyDirection: 开运方位
-            
+
             重要：直接返回 JSON，禁止包含 <think> 标签、Markdown 代码块或任何额外正文。确保 JSON 结构扁平，不要嵌套对象。
             """
             var body: [String: Any] = [
@@ -283,14 +347,16 @@ class AIService: ObservableObject {
                 "messages": [["role": "system", "content": systemPrompt], ["role": "user", "content": "生成 \(dateStr) 的完整黄历"]],
                 "temperature": 0.7
             ]
-            
-            if activeConfig.format == .groq {
+
+            if activeConfig.format == .anthropic {
+                body["max_tokens"] = 1024
+            } else if activeConfig.format == .groq {
                 body["include_reasoning"] = false
             }
-            
-            do { 
+
+            do {
                 let bodyData = try JSONSerialization.data(withJSONObject: body, options: .prettyPrinted)
-                request.httpBody = bodyData 
+                request.httpBody = bodyData
                 if let bodyString = String(data: bodyData, encoding: .utf8) {
                     LogManager.shared.append("[AI Request] Fetch Almanac, Body: \(bodyString)")
                 }
@@ -299,29 +365,42 @@ class AIService: ObservableObject {
                 promise(.failure(error))
                 return
             }
-            
+
             URLSession.shared.dataTaskPublisher(for: request)
                 .tryMap { $0.data }
-                .decode(type: OpenAIChatResponse.self, decoder: JSONDecoder())
-                .tryMap { response -> Data in
-                    let content = response.choices.first?.message.content ?? ""
-                    LogManager.shared.append("[AI Response] Almanac Content: \(content)")
-                    let cleaned = self.cleanAIContent(content)
-                    return cleaned.data(using: .utf8) ?? Data()
+                .tryMap { data -> Data in
+                    // Log raw response for debugging
+                    if let rawResponse = String(data: data, encoding: .utf8) {
+                        LogManager.shared.append("[AI Response Raw] \(rawResponse.prefix(500))")
+                    }
+                    switch activeConfig.format {
+                    case .anthropic:
+                        let response = try JSONDecoder().decode(AnthropicChatResponse.self, from: data)
+                        let content = response.content?.first?.text ?? ""
+                        LogManager.shared.append("[AI Response] Almanac Content: \(content)")
+                        let cleaned = self.cleanAIContent(content)
+                        return cleaned.data(using: .utf8) ?? Data()
+                    default:
+                        let response = try JSONDecoder().decode(OpenAIChatResponse.self, from: data)
+                        let content = response.choices.first?.message.content ?? ""
+                        LogManager.shared.append("[AI Response] Almanac Content: \(content)")
+                        let cleaned = self.cleanAIContent(content)
+                        return cleaned.data(using: .utf8) ?? Data()
+                    }
                 }
                 .decode(type: AlmanacResponse.self, decoder: JSONDecoder())
                 .receive(on: DispatchQueue.main)
                 .sink(
                     receiveCompletion: { completion in
                         self.isLoading = false
-                        if case .failure(let error) = completion { 
+                        if case .failure(let error) = completion {
                             LogManager.shared.append("[AI Error] Fetch Almanac Failed: \(error.localizedDescription)")
-                            promise(.failure(error)) 
+                            promise(.failure(error))
                         }
                     },
-                    receiveValue: { 
+                    receiveValue: {
                         LogManager.shared.append("[AI Response] Fetch Almanac Success")
-                        promise(.success($0)) 
+                        promise(.success($0))
                     }
                 )
                 .store(in: &self.cancellables)

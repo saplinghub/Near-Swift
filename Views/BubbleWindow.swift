@@ -1,9 +1,47 @@
 import AppKit
 import SwiftUI
 
+/// 气泡布局常量
+enum BubbleLayout {
+    static let width: CGFloat = 260
+    static let padding: CGFloat = 16
+    static let headerHeight: CGFloat = 24  // 类型标签高度
+    static let textFontSize: CGFloat = 14
+    static let buttonHeight: CGFloat = 32
+    static let triangleHeight: CGFloat = 8
+    static let baseHeight: CGFloat = 80  // 基础高度（头部+文本最小高度+尖角）
+}
+
+/// 手动计算气泡内容高度
+func calculateBubbleHeight(text: String, hasActions: Bool, actionCount: Int = 0) -> CGFloat {
+    // 计算文本高度
+    let textWidth = BubbleLayout.width - BubbleLayout.padding * 2
+    let font = NSFont.systemFont(ofSize: BubbleLayout.textFontSize)
+    let attributes: [NSAttributedString.Key: Any] = [.font: font]
+    let textHeight = (text as NSString).boundingRect(
+        with: NSSize(width: textWidth, height: .greatestFiniteMagnitude),
+        options: [.usesLineFragmentOrigin, .usesFontLeading],
+        attributes: attributes
+    ).height
+
+    // 文本区域高度（最小20，最多5行约70）
+    let textAreaHeight = max(20, min(70, ceil(textHeight)))
+
+    // 按钮区域高度
+    var buttonAreaHeight: CGFloat = 0
+    if hasActions {
+        buttonAreaHeight = BubbleLayout.buttonHeight + 8
+    }
+
+    // 总高度 = 基础高度 + 文本高度 + 按钮高度 + padding
+    let totalHeight = BubbleLayout.baseHeight + textAreaHeight + buttonAreaHeight
+
+    return ceil(totalHeight)
+}
+
 class BubbleWindow: NSPanel {
     private var model: PetModel
-    
+
     init(model: PetModel) {
         self.model = model
         super.init(
@@ -12,72 +50,52 @@ class BubbleWindow: NSPanel {
             backing: .buffered,
             defer: false
         )
-        
+
         self.backgroundColor = .clear
         self.isOpaque = false
         self.hasShadow = false
         self.level = .floating
         self.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         self.isMovableByWindowBackground = false
-        
+
         let contentView = BubbleContentView(model: model)
         let hostingView = NSHostingView(rootView: contentView)
         hostingView.layer?.backgroundColor = NSColor.clear.cgColor
-        
+
         self.contentView = hostingView
     }
-    
+
     override var canBecomeKey: Bool { return false }
     override var canBecomeMain: Bool { return false }
-    
-    private var lastUpdate: Date = .distantPast
 
     /// 当消息可见性改变时，刷新窗口大小并位置
     func updateSizeAndPosition(relativeTo petFrame: NSRect) {
-        // 调度到主线程，且确保不在当前的 SwiftUI 布局事务中冲突
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self,
-                  let hostingView = self.contentView as? NSHostingView<BubbleContentView> else { return }
-            
-            // 节流处理：0.1s 间隔
-            let now = Date()
-            if now.timeIntervalSince(self.lastUpdate) < 0.1 { return }
-            self.lastUpdate = now
-            
-            // 关键：SwiftUI 需要一个受限的宽度来计算合适的高度
-            // 我们通过直接给 hostingView 设定一个临时宽度约束，来获取准确的高度
-            let bubbleWidth: CGFloat = 260
-            let fittingSize = hostingView.fittingSize // 获取 SwiftUI 视图的自然尺寸
-            
-            // 过滤：如果高度几乎为 0，说明内容是空或被隐藏
-            if fittingSize.height < 10 {
-                if self.isVisible { self.orderOut(nil) }
-                return
-            }
-            
-            // 增加舍入处理，防止由于像素对齐导致的无限微量抖动（死循环诱因）
-            let bubbleHeight = ceil(fittingSize.height)
-            
-            // 计算位置：居中于宠物上方
-            let x = floor(petFrame.midX - bubbleWidth / 2)
-            let y = floor(petFrame.maxY + 5)
-            
-            let targetFrame = NSRect(x: x, y: y, width: bubbleWidth, height: bubbleHeight)
-            
-            // 只有当 Frame 发生显著改变（超过 0.5 像素）时才更新
-            if abs(self.frame.size.height - targetFrame.size.height) > 0.5 || 
-               abs(self.frame.origin.x - targetFrame.origin.x) > 0.5 ||
-               abs(self.frame.origin.y - targetFrame.origin.y) > 0.5 {
-                
-                // 【核心修复】移除 hostingView.setFrameSize(targetSize)
-                // 在 macOS 中，作为 contentView 的 hostingView 会由 NSWindow 自动管理
-                // 手动干预往往是导致 Auto Layout Loop 的元凶
-                self.setFrame(targetFrame, display: true, animate: false)
-            }
-            
-            if !self.isVisible {
-                self.makeKeyAndOrderFront(nil)
-            }
+        guard !model.isMessageVisible else {
+            // 显示消息
+            showAt(relativeTo: petFrame)
+            return
+        }
+
+        // 隐藏消息
+        if isVisible {
+            orderOut(nil)
+        }
+    }
+
+    private func showAt(relativeTo petFrame: NSRect) {
+        let message = model.message
+        let hasActions = !model.actions.isEmpty
+        let bubbleHeight = calculateBubbleHeight(text: message, hasActions: hasActions)
+
+        let x = floor(petFrame.midX - BubbleLayout.width / 2)
+        let y = floor(petFrame.maxY + 5)
+
+        let targetFrame = NSRect(x: x, y: y, width: BubbleLayout.width, height: bubbleHeight)
+
+        setFrame(targetFrame, display: true, animate: false)
+
+        if !isVisible {
+            makeKeyAndOrderFront(nil)
         }
     }
 }
