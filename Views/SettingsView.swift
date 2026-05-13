@@ -6,7 +6,7 @@ struct SettingsView: View {
     @EnvironmentObject var aiService: AIService
     @EnvironmentObject var storageManager: StorageManager
     
-    @State private var apiFormat: AIFormat = .groq
+    @State private var apiFormat: AIFormat = .oneAPI
     @State private var baseURL: String = ""
     @State private var apiKey: String = ""
     @State private var model: String = ""
@@ -347,7 +347,7 @@ struct SettingsView: View {
                 Spacer()
                 
                 Button(action: {
-                    editingConfig = AIConfig(name: "新配置", format: .groq, baseURL: "", apiKey: "", model: "")
+                    editingConfig = AIConfig(name: "新配置", format: .oneAPI, baseURL: "", apiKey: "", model: "")
                     withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
                         showConfigSheet = true
                     }
@@ -814,7 +814,7 @@ struct SettingsView: View {
                     HStack {
                         Text("版本")
                         Spacer()
-                        Text("v1.4")
+                        Text("v1.5")
                             .foregroundColor(.nearTextSecondary)
                     }
                     Divider()
@@ -1048,7 +1048,7 @@ struct AIConfigSheet: View {
     var onSave: (AIConfig) -> Void
     
     @State private var name: String = ""
-    @State private var format: AIFormat = .groq
+    @State private var format: AIFormat = .oneAPI
     @State private var baseURL: String = ""
     @State private var apiKey: String = ""
     @State private var model: String = ""
@@ -1140,7 +1140,7 @@ struct AIConfigSheet: View {
                         }
                         
                         FormGroup(label: "API 地址") {
-                            TextField(format == .groq ? "https://api.groq.com/openai/v1" : "https://api.example.com/v1", text: $baseURL)
+                            TextField(format == .zhipu ? "https://open.bigmodel.cn/api/anthropic" : format == .anthropic ? "https://api.anthropic.com" : "https://api.example.com/v1", text: $baseURL)
                                 .textFieldStyle(PlainTextFieldStyle())
                                 .padding(12)
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -1242,6 +1242,15 @@ struct AIConfigSheet: View {
                 self.systemPrompt = config.systemPrompt ?? ""
             }
         }
+        .onChange(of: format) { newFormat in
+            switch newFormat {
+            case .zhipu:
+                if baseURL.isEmpty { baseURL = "https://open.bigmodel.cn/api/anthropic" }
+                if model.isEmpty { model = "glm-5.1" }
+            default:
+                break
+            }
+        }
     }
     
     private func testConnection() {
@@ -1255,9 +1264,9 @@ struct AIConfigSheet: View {
         case .anthropic:
             base = baseURL.isEmpty ? "https://api.anthropic.com" : baseURL
             endpoint = "/v1/messages"
-        case .groq:
-            base = baseURL.isEmpty ? "https://api.groq.com/openai/v1" : baseURL
-            endpoint = "/chat/completions"
+        case .zhipu:
+            base = baseURL.isEmpty ? "https://open.bigmodel.cn/api/anthropic" : baseURL
+            endpoint = "/v1/messages"
         case .oneAPI:
             base = baseURL
             endpoint = "/chat/completions"

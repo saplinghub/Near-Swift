@@ -64,9 +64,9 @@ class AIService: ObservableObject {
             case .anthropic:
                 base = activeConfig.baseURL.isEmpty ? "https://api.anthropic.com" : activeConfig.baseURL
                 endpoint = "/v1/messages"
-            case .groq:
-                base = activeConfig.baseURL.isEmpty ? "https://api.groq.com/openai/v1" : activeConfig.baseURL
-                endpoint = "/chat/completions"
+            case .zhipu:
+                base = activeConfig.baseURL.isEmpty ? "https://open.bigmodel.cn/api/anthropic" : activeConfig.baseURL
+                endpoint = "/v1/messages"
             case .oneAPI:
                 base = activeConfig.baseURL
                 endpoint = "/chat/completions"
@@ -110,10 +110,10 @@ class AIService: ObservableObject {
                 "temperature": 0.3
             ]
 
-            if activeConfig.format == .anthropic {
+            if activeConfig.format == .anthropic || activeConfig.format == .zhipu {
+                body["system"] = systemPrompt
+                body["messages"] = [["role": "user", "content": "解析倒计时事件：\(input)"]]
                 body["max_tokens"] = 1024
-            } else if activeConfig.format == .groq {
-                body["include_reasoning"] = false
             }
 
             do {
@@ -138,7 +138,7 @@ class AIService: ObservableObject {
                 }
                 .tryMap { data -> String in
                     switch activeConfig.format {
-                    case .anthropic:
+                    case .anthropic, .zhipu:
                         let response = try JSONDecoder().decode(AnthropicChatResponse.self, from: data)
                         guard let content = response.content?.first?.text else {
                             throw NSError(domain: "AI Error", code: -1)
@@ -193,9 +193,9 @@ class AIService: ObservableObject {
             case .anthropic:
                 base = activeConfig.baseURL.isEmpty ? "https://api.anthropic.com" : activeConfig.baseURL
                 endpoint = "/v1/messages"
-            case .groq:
-                base = activeConfig.baseURL.isEmpty ? "https://api.groq.com/openai/v1" : activeConfig.baseURL
-                endpoint = "/chat/completions"
+            case .zhipu:
+                base = activeConfig.baseURL.isEmpty ? "https://open.bigmodel.cn/api/anthropic" : activeConfig.baseURL
+                endpoint = "/v1/messages"
             case .oneAPI:
                 base = activeConfig.baseURL
                 endpoint = "/chat/completions"
@@ -222,10 +222,10 @@ class AIService: ObservableObject {
                 "temperature": 0.5
             ]
 
-            if activeConfig.format == .anthropic {
+            if activeConfig.format == .anthropic || activeConfig.format == .zhipu {
+                body["system"] = systemPrompt + "\n重要：请直接返回点评内容，不要包含任何思考过程或额外解释。"
+                body["messages"] = [["role": "user", "content": "请分析日志：\n\(content.prefix(3000))"]]
                 body["max_tokens"] = 256
-            } else if activeConfig.format == .groq {
-                body["include_reasoning"] = false
             }
 
             do {
@@ -243,7 +243,7 @@ class AIService: ObservableObject {
             URLSession.shared.dataTaskPublisher(for: request)
                 .tryMap { data, _ -> String in
                     switch activeConfig.format {
-                    case .anthropic:
+                    case .anthropic, .zhipu:
                         let response = try JSONDecoder().decode(AnthropicChatResponse.self, from: data)
                         let content = response.content?.first?.text ?? "分析失败"
                         return self.cleanAIContent(content)
@@ -294,9 +294,9 @@ class AIService: ObservableObject {
             case .anthropic:
                 base = activeConfig.baseURL.isEmpty ? "https://api.anthropic.com" : activeConfig.baseURL
                 endpoint = "/v1/messages"
-            case .groq:
-                base = activeConfig.baseURL.isEmpty ? "https://api.groq.com/openai/v1" : activeConfig.baseURL
-                endpoint = "/chat/completions"
+            case .zhipu:
+                base = activeConfig.baseURL.isEmpty ? "https://open.bigmodel.cn/api/anthropic" : activeConfig.baseURL
+                endpoint = "/v1/messages"
             case .oneAPI:
                 base = activeConfig.baseURL
                 endpoint = "/chat/completions"
@@ -348,10 +348,10 @@ class AIService: ObservableObject {
                 "temperature": 0.7
             ]
 
-            if activeConfig.format == .anthropic {
+            if activeConfig.format == .anthropic || activeConfig.format == .zhipu {
+                body["system"] = systemPrompt
+                body["messages"] = [["role": "user", "content": "生成 \(dateStr) 的完整黄历"]]
                 body["max_tokens"] = 1024
-            } else if activeConfig.format == .groq {
-                body["include_reasoning"] = false
             }
 
             do {
@@ -374,7 +374,7 @@ class AIService: ObservableObject {
                         LogManager.shared.append("[AI Response Raw] \(rawResponse.prefix(500))")
                     }
                     switch activeConfig.format {
-                    case .anthropic:
+                    case .anthropic, .zhipu:
                         let response = try JSONDecoder().decode(AnthropicChatResponse.self, from: data)
                         let content = response.content?.first?.text ?? ""
                         LogManager.shared.append("[AI Response] Almanac Content: \(content)")

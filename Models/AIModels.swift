@@ -1,9 +1,10 @@
 import Foundation
 
 enum AIFormat: String, Codable, CaseIterable {
-    case groq = "Groq"
+    // case groq = "Groq"
     case oneAPI = "OneAPI"
     case anthropic = "Anthropic"
+    case zhipu = "智谱"
 }
 
 struct AIConfig: Codable, Identifiable, Equatable {
@@ -33,7 +34,7 @@ struct AIConfig: Codable, Identifiable, Equatable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
         self.name = try container.decodeIfPresent(String.self, forKey: .name) ?? "默认配置"
-        self.format = try container.decodeIfPresent(AIFormat.self, forKey: .format) ?? .groq
+        self.format = try container.decodeIfPresent(AIFormat.self, forKey: .format) ?? .oneAPI
         self.baseURL = try container.decode(String.self, forKey: .baseURL)
         self.apiKey = try container.decode(String.self, forKey: .apiKey)
         self.model = try container.decode(String.self, forKey: .model)
@@ -43,11 +44,11 @@ struct AIConfig: Codable, Identifiable, Equatable {
     static func createDefault() -> AIConfig {
         AIConfig(
             id: UUID(),
-            name: "Groq 默认",
-            format: .groq,
-            baseURL: "https://api.groq.com/openai/v1",
+            name: "OneAPI 默认",
+            format: .oneAPI,
+            baseURL: "",
             apiKey: "",
-            model: "llama-3.3-70b-versatile",
+            model: "",
             systemPrompt: ""
         )
     }
