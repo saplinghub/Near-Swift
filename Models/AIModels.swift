@@ -77,6 +77,20 @@ struct OpenAIChatResponse: Codable {
         let message: Message
     }
     let choices: [Choice]
+
+    enum CodingKeys: String, CodingKey {
+        case choices
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.choices = (try? container.decode([Choice].self, forKey: .choices)) ?? []
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(choices, forKey: .choices)
+    }
 }
 
 // Wrapper for Anthropic API Response
@@ -147,13 +161,23 @@ struct AnthropicChatResponse: Codable {
             return
         }
 
-        // Try: decode as array of raw items and extract only text (skip thinking)
+        // Try: decode as array of raw items and extract text (or thinking as fallback)
         if let rawItems = try? container.decode([RawContentItem].self, forKey: .content) {
             var texts: [Content] = []
+            var thinkingTexts: [String] = []
             for item in rawItems {
-                if case .text(let s) = item {
+                switch item {
+                case .text(let s):
                     texts.append(Content(text: s))
+                case .thinking(let s):
+                    thinkingTexts.append(s)
+                default:
+                    break
                 }
+            }
+            // If no text found but thinking exists, use thinking as fallback
+            if texts.isEmpty && !thinkingTexts.isEmpty {
+                texts = thinkingTexts.map { Content(text: $0) }
             }
             self.content = texts.isEmpty ? nil : texts
             return

@@ -114,6 +114,7 @@ class AIService: ObservableObject {
                 body["system"] = systemPrompt
                 body["messages"] = [["role": "user", "content": "解析倒计时事件：\(input)"]]
                 body["max_tokens"] = 1024
+                body["thinking"] = ["type": "disabled"]
             }
 
             do {
@@ -147,10 +148,16 @@ class AIService: ObservableObject {
                         return self.cleanAIContent(content)
                     default:
                         let response = try JSONDecoder().decode(OpenAIChatResponse.self, from: data)
-                        guard let content = response.choices.first?.message.content else {
+                        if let content = response.choices.first?.message.content {
+                            LogManager.shared.append("[AI Response] Content: \(content)")
+                            return self.cleanAIContent(content)
+                        }
+                        // Fallback: try Anthropic-style (e.g. DeepSeek with thinking tags)
+                        let anthroResponse = try JSONDecoder().decode(AnthropicChatResponse.self, from: data)
+                        guard let content = anthroResponse.content?.first?.text else {
                             throw NSError(domain: "AI Error", code: -1)
                         }
-                        LogManager.shared.append("[AI Response] Content: \(content)")
+                        LogManager.shared.append("[AI Response] Content (fallback Anthropic): \(content)")
                         return self.cleanAIContent(content)
                     }
                 }
@@ -226,6 +233,7 @@ class AIService: ObservableObject {
                 body["system"] = systemPrompt + "\n重要：请直接返回点评内容，不要包含任何思考过程或额外解释。"
                 body["messages"] = [["role": "user", "content": "请分析日志：\n\(content.prefix(3000))"]]
                 body["max_tokens"] = 256
+                body["thinking"] = ["type": "disabled"]
             }
 
             do {
@@ -249,7 +257,12 @@ class AIService: ObservableObject {
                         return self.cleanAIContent(content)
                     default:
                         let response = try JSONDecoder().decode(OpenAIChatResponse.self, from: data)
-                        let content = response.choices.first?.message.content ?? "分析失败"
+                        if let content = response.choices.first?.message.content {
+                            return self.cleanAIContent(content)
+                        }
+                        // Fallback: try Anthropic-style
+                        let anthroResponse = try JSONDecoder().decode(AnthropicChatResponse.self, from: data)
+                        let content = anthroResponse.content?.first?.text ?? "分析失败"
                         return self.cleanAIContent(content)
                     }
                 }
@@ -352,6 +365,7 @@ class AIService: ObservableObject {
                 body["system"] = systemPrompt
                 body["messages"] = [["role": "user", "content": "生成 \(dateStr) 的完整黄历"]]
                 body["max_tokens"] = 1024
+                body["thinking"] = ["type": "disabled"]
             }
 
             do {
@@ -382,8 +396,15 @@ class AIService: ObservableObject {
                         return cleaned.data(using: .utf8) ?? Data()
                     default:
                         let response = try JSONDecoder().decode(OpenAIChatResponse.self, from: data)
-                        let content = response.choices.first?.message.content ?? ""
-                        LogManager.shared.append("[AI Response] Almanac Content: \(content)")
+                        if let content = response.choices.first?.message.content {
+                            LogManager.shared.append("[AI Response] Almanac Content: \(content)")
+                            let cleaned = self.cleanAIContent(content)
+                            return cleaned.data(using: .utf8) ?? Data()
+                        }
+                        // Fallback: try Anthropic-style (e.g. DeepSeek with thinking tags)
+                        let anthroResponse = try JSONDecoder().decode(AnthropicChatResponse.self, from: data)
+                        let content = anthroResponse.content?.first?.text ?? ""
+                        LogManager.shared.append("[AI Response] Almanac Content (fallback Anthropic): \(content)")
                         let cleaned = self.cleanAIContent(content)
                         return cleaned.data(using: .utf8) ?? Data()
                     }
