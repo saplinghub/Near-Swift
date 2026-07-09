@@ -58,7 +58,27 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
     
     private var powerCancellables = Set<AnyCancellable>()
     private var notificationCancellable: AnyCancellable?
-    
+
+    private func refreshAnimationState(reason: String) {
+        let descriptor = PetAnimationResolver.resolve(model: model)
+        let oldState = model.animationState
+        let oldAnimating = model.isAnimating
+        let shouldAnimate = descriptor.playback == .playing
+
+        if oldState != descriptor.state {
+            model.animationState = descriptor.state
+            LogManager.shared.appendPerformance(
+                key: "pet-animation-state",
+                interval: 5.0,
+                "[PET-PERF] Animation \(oldState.rawValue) -> \(descriptor.state.rawValue), playback=\(descriptor.playback), reason=\(reason)"
+            )
+        }
+
+        if oldAnimating != shouldAnimate {
+            model.isAnimating = shouldAnimate
+        }
+    }
+
     override private init() {
         super.init()
         setupPowerObservation()
@@ -130,8 +150,8 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
         model.$isMessageVisible
             .receive(on: DispatchQueue.main)
             .sink { [weak self] isVisible in
-                // 激活动画：消息显示中
-                self?.model.isAnimating = isVisible
+                // 消息可见性变化后统一解析动画状态，避免覆盖 walking/dragging 等动画。
+                self?.refreshAnimationState(reason: "messageVisibleChanged")
 
                 // 气泡更新：立即更新，使用手动计算的高度
                 if let petFrame = self?.petWindow?.frame {
@@ -150,12 +170,13 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
                 // 则强制修正 isDragging 状态
                 if self.isDragging && NSEvent.pressedMouseButtons == 0 {
                     self.isDragging = false
+                    self.model.isDragging = false
                 }
-                
-                let shouldAnimate = self.model.isMessageVisible || self.isDragging
-                if self.model.isAnimating != shouldAnimate {
-                    self.model.isAnimating = shouldAnimate
+
+                if self.model.isDragging != self.isDragging {
+                    self.model.isDragging = self.isDragging
                 }
+                self.refreshAnimationState(reason: "dragFallbackTimer")
             }
             .store(in: &powerCancellables)
     }
@@ -165,6 +186,9 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
         invalidateAllTimers()
         monitor?.stopMonitoring()
         withAnimation { model.isMessageVisible = false }
+        model.isDragging = false
+        model.state = .idle
+        refreshAnimationState(reason: "enterIdleMode")
     }
 
     /// 统一清理所有 Timer，防止资源泄漏
@@ -181,7 +205,8 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
         LogManager.shared.append("[PET] Detected Idle Exit: Restoring activities")
         monitor?.startMonitoring()
         startMonitoring()
-        
+        refreshAnimationState(reason: "idleExit")
+
         // 延迟 1-3s 触发拟人化唤醒
         let delay = Double.random(in: 1.0...3.0)
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
@@ -231,17 +256,18 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
     func handleWindowMoved() {
         // 拖拽中激活动画
         self.isDragging = true
-        if !model.isAnimating { model.isAnimating = true }
-        
+        model.isDragging = true
+        refreshAnimationState(reason: "draggingStarted")
+
         // 由于使用了 addChildWindow，位移同步由系统处理
         handleDocking(isDragging: true)
     }
     
     func finishDragging() {
         self.isDragging = false
-        // 停止拖拽后，如果没有气泡，则停止动画以省电
-        if !model.isMessageVisible { model.isAnimating = false }
-        
+        model.isDragging = false
+        refreshAnimationState(reason: "draggingFinished")
+
         handleDocking(isDragging: false)
         // 停止拖拽后，强制校验一次气泡位置
         if let petFrame = petWindow?.frame {
@@ -601,7 +627,8 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
                     if shouldDock { self.model.state = .docked }
                     else if self.model.state == .docked { self.model.state = .idle }
                 }
-                
+                self.refreshAnimationState(reason: "dockingChanged")
+
                 if wasAlreadyDocked && !shouldDock {
                     self.saySomething(text: self.undockQuotes.randomElement() ?? "呼~ 被抓出来了")
                 }
@@ -670,9 +697,12 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
         let targetX = CGFloat.random(in: (s.minX + margin)...(s.maxX - margin))
         let targetY = CGFloat.random(in: (s.minY + margin)...(s.maxY - margin))
         let target = CGPoint(x: targetX - window.frame.width/2, y: targetY - window.frame.height/2)
+        let dx = target.x - window.frame.origin.x
+        model.facingDirection = dx < 0 ? .left : .right
         model.state = .walking
         model.walkTarget = target
-        
+        refreshAnimationState(reason: "walkStarted")
+
         // 彻底废弃 Timer 步进，改用 Core Animation (NSAnimationContext) 驱动
         NSAnimationContext.runAnimationGroup({ context in
             let dx = target.x - window.frame.origin.x
@@ -680,7 +710,7 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
             let dist = hypot(dx, dy)
             
             // 保持约 10-20 pts/s 的优雅速度
-            context.duration = dist / 15.0 
+            context.duration = dist / 15.0
             context.timingFunction = CAMediaTimingFunction(name: .linear)
             
             window.animator().setFrameOrigin(target)
@@ -700,6 +730,7 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
         model.state = .idle
         model.lastWalkTime = Date()
         model.walkTarget = nil
+        refreshAnimationState(reason: "walkStopped")
     }
     
     private let randomQuotes = ["奴才出来溜达溜达~", "陛下在忙吗？奴才来转转", "这空气真好！", "奴才巡视一下领地~", "好无聊啊陛下...", "奴才想玩！", "趴在地上好凉快~", "陛下需要奴才陪吗？", "奴才走累了..."]

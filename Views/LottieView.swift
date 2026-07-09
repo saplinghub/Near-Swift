@@ -5,8 +5,18 @@ import AppKit
 struct LottieView: NSViewRepresentable {
     var animationName: String
     var loopMode: LottieLoopMode = .loop
-    var isPaused: Bool = false // 联动播放状态
-    
+    var playback: PetAnimationPlayback = .playing
+
+    final class Coordinator {
+        var lastAnimationName: String?
+        var lastLoopMode: LottieLoopMode?
+        var lastPlayback: PetAnimationPlayback?
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
     func makeNSView(context: Context) -> LottieAnimationView {
         let animationView = LottieAnimationView()
         
@@ -19,43 +29,65 @@ struct LottieView: NSViewRepresentable {
         animationView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         animationView.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
         
-        if let path = ResourceBundle.current.path(forResource: animationName, ofType: "json") {
-            animationView.animation = LottieAnimation.filepath(path)
-        } else {
-            animationView.animation = LottieAnimation.named(animationName, bundle: ResourceBundle.current)
-        }
-        
+        loadAnimation(named: animationName, into: animationView)
+
         animationView.contentMode = .scaleAspectFit
         animationView.loopMode = loopMode
         animationView.backgroundBehavior = .pauseAndRestore
-        
+
         // 【关键优化】使用 CoreAnimation 引擎
         animationView.configuration = LottieConfiguration(renderingEngine: .coreAnimation)
-        
-        if !isPaused {
-            animationView.play()
-        } else {
-            animationView.currentProgress = 0
-        }
-        
+
+        context.coordinator.lastAnimationName = animationName
+        context.coordinator.lastLoopMode = loopMode
+        applyPlayback(playback, to: animationView, coordinator: context.coordinator, force: true)
+
         return animationView
     }
     
     func updateNSView(_ nsView: LottieAnimationView, context: Context) {
-        if isPaused {
-            // 【优化】用户希望停止：改为“播放一次”模式
-            // 这样 Lottie 会自然播放完当前这一轮循环，然后停在结束帧（通常与首帧衔接）
-            if nsView.loopMode == .loop {
-                nsView.loopMode = .playOnce
-            }
-        } else {
-            // 用户希望激活：恢复“循环”模式并确保正在播放
-            if nsView.loopMode == .playOnce {
-                nsView.loopMode = .loop
-            }
-            if !nsView.isAnimationPlaying {
-                nsView.play()
-            }
+        if context.coordinator.lastAnimationName != animationName {
+            nsView.stop()
+            loadAnimation(named: animationName, into: nsView)
+            nsView.currentProgress = 0
+            context.coordinator.lastAnimationName = animationName
+            context.coordinator.lastPlayback = nil
         }
+
+        if context.coordinator.lastLoopMode != loopMode {
+            nsView.loopMode = loopMode
+            context.coordinator.lastLoopMode = loopMode
+        }
+
+        applyPlayback(playback, to: nsView, coordinator: context.coordinator)
+    }
+
+    private func loadAnimation(named name: String, into animationView: LottieAnimationView) {
+        if let path = ResourceBundle.current.path(forResource: name, ofType: "json") {
+            animationView.animation = LottieAnimation.filepath(path)
+        } else {
+            animationView.animation = LottieAnimation.named(name, bundle: ResourceBundle.current)
+        }
+    }
+
+    private func applyPlayback(_ playback: PetAnimationPlayback, to animationView: LottieAnimationView, coordinator: Coordinator, force: Bool = false) {
+        guard force || coordinator.lastPlayback != playback else { return }
+
+        switch playback {
+        case .playing:
+            animationView.loopMode = loopMode
+            if !animationView.isAnimationPlaying {
+                animationView.play()
+            }
+        case .paused:
+            if animationView.isAnimationPlaying {
+                animationView.pause()
+            }
+        case .stopped:
+            animationView.stop()
+            animationView.currentProgress = 0
+        }
+
+        coordinator.lastPlayback = playback
     }
 }

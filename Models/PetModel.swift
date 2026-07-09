@@ -14,6 +14,87 @@ enum DockEdge {
     case none, left, right, top, bottom
 }
 
+/// 宠物动画播放状态
+/// 行为状态仍由 PetState 表达，动画状态只负责渲染层播放意图。
+enum PetAnimationState: String, Codable {
+    case lowPower
+    case idle
+    case docked
+    case speaking
+    case dragging
+    case walking
+}
+
+/// 宠物朝向，用于 walking/dragging 等场景的轻量翻转。
+enum PetFacingDirection: String, Codable {
+    case left
+    case right
+
+    var scale: CGFloat {
+        switch self {
+        case .left: return -1
+        case .right: return 1
+        }
+    }
+}
+
+/// Lottie 播放控制策略。
+enum PetAnimationPlayback: Equatable {
+    case playing
+    case paused
+    case stopped
+}
+
+/// 视图层消费的动画描述，避免 PetContentView 分散判断业务状态。
+struct PetAnimationDescriptor: Equatable {
+    let state: PetAnimationState
+    let animationName: String
+    let playback: PetAnimationPlayback
+    let shouldBob: Bool
+    let facingDirection: PetFacingDirection
+    let scale: CGFloat
+    let opacity: Double
+}
+
+struct PetAnimationResolver {
+    static func resolve(model: PetModel) -> PetAnimationDescriptor {
+        let animationState: PetAnimationState
+
+        if !model.isEnabled || model.isIdle {
+            animationState = .lowPower
+        } else if model.isDragging {
+            animationState = .dragging
+        } else if model.isMessageVisible {
+            animationState = .speaking
+        } else if model.state == .walking {
+            animationState = .walking
+        } else if model.isDocked || model.state == .docked {
+            animationState = .docked
+        } else {
+            animationState = .idle
+        }
+
+        let playback: PetAnimationPlayback = {
+            switch animationState {
+            case .speaking, .dragging, .walking:
+                return .playing
+            case .lowPower, .idle, .docked:
+                return .stopped
+            }
+        }()
+
+        return PetAnimationDescriptor(
+            state: animationState,
+            animationName: "guaishou",
+            playback: playback,
+            shouldBob: animationState == .walking,
+            facingDirection: model.facingDirection,
+            scale: model.isDocked ? 0.75 : 1.0,
+            opacity: model.isDocked ? 0.9 : 1.0
+        )
+    }
+}
+
 /// 消息类型映射
 enum PetMessageType: String, Codable {
     case system, health, power, fun, weather
@@ -91,9 +172,18 @@ class PetModel: ObservableObject {
     @Published var messageType: PetMessageType = .fun
     @Published var isMessageVisible: Bool = false
     
-    /// 是否正处于动画活跃状态（气泡显示或拖拽时）
+    /// 当前动画状态，由 PetAnimationResolver 统一解析。
+    @Published var animationState: PetAnimationState = .idle
+
+    /// 当前宠物朝向，用于行走时根据目标方向翻转。
+    @Published var facingDirection: PetFacingDirection = .right
+
+    /// 是否正在拖拽。保留在 model 中，便于视图层统一解析动画状态。
+    @Published var isDragging: Bool = false
+
+    /// 是否正处于动画活跃状态（兼容旧逻辑，由 animationState 派生）。
     @Published var isAnimating: Bool = false
-    
+
     // 自由移动目标
     var walkTarget: CGPoint?
     var lastWalkTime: Date = .distantPast

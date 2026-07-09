@@ -42,6 +42,12 @@ class SystemMonitor: ObservableObject {
         updateMemory()
         updateDisk()
         updateThermalState()
+
+        LogManager.shared.appendPerformance(
+            key: "system-monitor-summary",
+            interval: 60.0,
+            "[PET-PERF] SystemMonitor cpu=\(String(format: "%.2f", cpuUsage)), memory=\(String(format: "%.1f", memoryUsage.used))/\(String(format: "%.1f", memoryUsage.total))GB, thermal=\(thermalState)"
+        )
     }
     
     // MARK: - CPU Usage

@@ -18,6 +18,8 @@ class StatusBarManager: NSObject, NSWindowDelegate, NSMenuDelegate {
     // Animation
     private var fanCGImages: [CGImage] = []
     private var iconLayer: CALayer?
+    private var lastWindmillSpeed: Float = -1
+    private var lastWindmillStopReason: String?
     private var cancellables = Set<AnyCancellable>()
 
     init(countdownManager: CountdownManager, aiService: AIService, storageManager: StorageManager, systemMonitor: SystemMonitor) {
@@ -182,18 +184,50 @@ class StatusBarManager: NSObject, NSWindowDelegate, NSMenuDelegate {
             // Set initial content for static state or speed = 0 cases
             layer.contents = self.fanCGImages.first
             
-            // Create the Keyframe Animation
-            let animation = CAKeyframeAnimation(keyPath: "contents")
-            animation.values = self.fanCGImages
-            animation.calculationMode = .discrete // Jump between frames
-            animation.duration = 1.0 // 1 second per full rotation (Base speed)
-            animation.repeatCount = .infinity
-            animation.isRemovedOnCompletion = false
-            
-            layer.add(animation, forKey: "spin")
-            
-            // Initialize speed
-            layer.speed = 1.0
+            // 由统一的 updateWindmillState 决定是否启动动画，避免 idle/关闭状态下短暂开启动画。
+            self.updateWindmillState()
+        }
+    }
+
+    private func makeFanAnimation() -> CAKeyframeAnimation {
+        let animation = CAKeyframeAnimation(keyPath: "contents")
+        animation.values = fanCGImages
+        animation.calculationMode = .discrete // Jump between frames
+        animation.duration = 1.0 // 1 second per full rotation (Base speed)
+        animation.repeatCount = .infinity
+        animation.isRemovedOnCompletion = false
+        return animation
+    }
+
+    private func stopWindmillAnimation(reason: String) {
+        guard let layer = iconLayer else { return }
+        layer.removeAnimation(forKey: "spin")
+        layer.speed = 1.0
+        layer.timeOffset = 0
+        layer.contents = fanCGImages.first
+        lastWindmillSpeed = 0
+
+        if lastWindmillStopReason != reason {
+            lastWindmillStopReason = reason
+            LogManager.shared.appendPerformance(key: "windmill-stop", interval: 10.0, "[PET-PERF] Windmill stopped: \(reason)")
+        }
+    }
+
+    private func startWindmillAnimationIfNeeded(speed: Float) {
+        guard let layer = iconLayer else { return }
+        if layer.animation(forKey: "spin") == nil {
+            layer.add(makeFanAnimation(), forKey: "spin")
+            lastWindmillStopReason = nil
+            LogManager.shared.appendPerformance(key: "windmill-start", interval: 10.0, "[PET-PERF] Windmill animation started")
+        }
+
+        if abs(layer.speed - speed) > 0.05 {
+            layer.speed = speed
+        }
+
+        if abs(lastWindmillSpeed - speed) > 0.05 {
+            lastWindmillSpeed = speed
+            LogManager.shared.appendPerformance(key: "windmill-speed", interval: 10.0, "[PET-PERF] Windmill speed=\(speed)")
         }
     }
     
@@ -214,6 +248,13 @@ class StatusBarManager: NSObject, NSWindowDelegate, NSMenuDelegate {
                 self?.updateFanSpeed(usage: usage)
             }
             .store(in: &cancellables)
+
+        PowerStateManager.shared.$isIdle
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.updateWindmillState()
+            }
+            .store(in: &cancellables)
     }
     
     private func updateFanSpeed(usage: Double) {
@@ -221,17 +262,17 @@ class StatusBarManager: NSObject, NSWindowDelegate, NSMenuDelegate {
         // Proportional: Higher CPU = Faster Spin
         // Usage is 0.0 to 1.0
         
-        guard let layer = iconLayer else { return }
-        
+        guard iconLayer != nil else { return }
+
         // 风车启用配置优先级次高：由用户手动控制开关
         if !storageManager.isWindmillEnabled {
-            if layer.speed != 0.0 { layer.speed = 0.0 }
+            stopWindmillAnimation(reason: "disabled")
             return
         }
-        
-        // 闲置状态优先级最高：彻底停止动画以解除 WindowServer 渲染压力
+
+        // 闲置状态优先级最高：彻底移除动画以解除 WindowServer 渲染压力
         if PowerStateManager.shared.isIdle {
-            if layer.speed != 0.0 { layer.speed = 0.0 }
+            stopWindmillAnimation(reason: "idle")
             return
         }
         
@@ -250,10 +291,7 @@ class StatusBarManager: NSObject, NSWindowDelegate, NSMenuDelegate {
         // Output speed for debugging if needed
         // print("CPU: \(usage) -> Speed: \(targetSpeed)")
         
-        // Smooth update check
-        if abs(layer.speed - targetSpeed) > 0.05 {
-            layer.speed = targetSpeed
-        }
+        startWindmillAnimationIfNeeded(speed: targetSpeed)
     }
     
     /// 当设置中的风车开关发生变化时，调用此方法立即同步状态

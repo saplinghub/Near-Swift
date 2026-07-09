@@ -6,7 +6,9 @@ class LogManager: ObservableObject {
     
     @Published var logs: String = ""
     private var cancellables = Set<AnyCancellable>()
-    
+    private var lastPerformanceLogTimes: [String: Date] = [:]
+    private let performanceLogLock = NSLock()
+
     private var logDirectory: URL {
         let fileManager = FileManager.default
         let urls = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)
@@ -25,7 +27,7 @@ class LogManager: ObservableObject {
     func append(_ message: String) {
         let timestamp = SharedUtils.dateFormatter(format: "yyyy-MM-dd HH:mm:ss.SSS").string(from: Date())
         let newEntry = "[\(timestamp)] \(message)\n"
-        
+
         // 1. Memory Log (Debug UI) - Keep only last 100 lines
         DispatchQueue.main.async {
             let currentLogs = self.logs.components(separatedBy: .newlines).filter { !$0.isEmpty }
@@ -46,7 +48,24 @@ class LogManager: ObservableObject {
         // 3. File Log
         logToFile(newEntry)
     }
-    
+
+    /// 记录低频性能日志。同一个 key 在 interval 内最多写入一次，避免性能日志本身制造 IO 压力。
+    func appendPerformance(key: String, interval: TimeInterval = 30.0, _ message: @autoclosure () -> String) {
+        let now = Date()
+        var shouldLog = false
+
+        performanceLogLock.lock()
+        let lastLogTime = lastPerformanceLogTimes[key] ?? .distantPast
+        if now.timeIntervalSince(lastLogTime) >= interval {
+            lastPerformanceLogTimes[key] = now
+            shouldLog = true
+        }
+        performanceLogLock.unlock()
+
+        guard shouldLog else { return }
+        append(message())
+    }
+
     private func logToFile(_ entry: String) {
         let fileName = "\(SharedUtils.dateFormatter(format: "yyyy-MM-dd").string(from: Date())).log"
         let fileURL = logDirectory.appendingPathComponent(fileName)
