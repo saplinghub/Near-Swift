@@ -1,11 +1,72 @@
 import SwiftUI
 
+/// 等宽分段选择器：均分整行宽度，长标题不会像横向滚动胶囊那样被截断。
+struct NearSegmentedPicker<T: Hashable & RawRepresentable>: View where T.RawValue == String {
+    let items: [T]
+    @Binding var selection: T
+
+    @Namespace private var animation
+
+    var body: some View {
+        GeometryReader { geometry in
+            let itemWidth = geometry.size.width / CGFloat(items.count)
+
+            ZStack(alignment: .leading) {
+                // 背景容器
+                Capsule()
+                    .fill(Color(hex: "#F8FAFC"))
+                    .overlay(
+                        Capsule()
+                            .stroke(Color(hex: "#E2E8F0"), lineWidth: 1)
+                    )
+
+                // 滑动高亮
+                if let selectedIndex = items.firstIndex(of: selection) {
+                    Capsule()
+                        .fill(
+                            LinearGradient(
+                                colors: [.nearPrimary, .nearSecondary],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .shadow(color: .nearPrimary.opacity(0.3), radius: 5, x: 0, y: 3)
+                        .frame(width: itemWidth - 4, height: geometry.size.height - 4)
+                        .offset(x: CGFloat(selectedIndex) * itemWidth + 2)
+                        .animation(.spring(response: 0.35, dampingFraction: 0.75), value: selection)
+                }
+
+                // 标签
+                HStack(spacing: 0) {
+                    ForEach(items, id: \.self) { item in
+                        Text(item.rawValue)
+                            .font(.system(size: 13, weight: selection == item ? .bold : .medium))
+                            .foregroundColor(selection == item ? .white : .nearTextSecondary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                            .padding(.horizontal, 6)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
+                                    selection = item
+                                }
+                            }
+                    }
+                }
+            }
+        }
+        .frame(height: 36)
+    }
+}
+
+/// 横向滚动胶囊选择器（原有组件，保留给“接口格式”等多选项场景）。
 struct NearPremiumPicker<T: Hashable & RawRepresentable>: View where T.RawValue == String {
     let items: [T]
     @Binding var selection: T
-    
+
     @Namespace private var animation
-    
+
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {

@@ -1,25 +1,68 @@
 import Foundation
 
-enum AIFormat: String, Codable, CaseIterable {
-    // case groq = "Groq"
-    case oneAPI = "OneAPI"
+/// AI 接口格式：统一收敛为两大类
+enum AIFormat: String, Codable, CaseIterable, Identifiable {
+    case openAI = "OpenAI"
     case anthropic = "Anthropic"
-    case zhipu = "智谱"
+
+    var id: String { rawValue }
+
+    /// 兼容历史存储值：
+    /// - "OneAPI" 为 OpenAI 兼容网关 → .openAI
+    /// - "智谱" 走 Anthropic 兼容接口 → .anthropic
+    init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        switch raw {
+        case "OneAPI", "oneAPI", "OpenAI", "openAI", "openai":
+            self = .openAI
+        case "智谱", "zhipu", "Anthropic", "anthropic":
+            self = .anthropic
+        default:
+            self = .openAI
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
+}
+
+/// OpenAI 格式下的具体 API 形态
+enum OpenAIEndpoint: String, Codable, CaseIterable, Identifiable {
+    case chatCompletions = "Chat Completions"
+    case responses = "Responses API"
+
+    var id: String { rawValue }
 }
 
 struct AIConfig: Codable, Identifiable, Equatable {
     var id: UUID
     var name: String
     var format: AIFormat
+    /// OpenAI 格式下选择 Chat Completions 还是 Responses API（仅 format == .openAI 时生效）
+    var openAIEndpoint: OpenAIEndpoint
+    /// 是否禁用思考（默认 true，即默认关闭思考）
+    var disableThinking: Bool
     var baseURL: String
     var apiKey: String
     var model: String
     var systemPrompt: String?
 
-    init(id: UUID = UUID(), name: String, format: AIFormat, baseURL: String, apiKey: String, model: String, systemPrompt: String? = nil) {
+    init(id: UUID = UUID(),
+         name: String,
+         format: AIFormat,
+         openAIEndpoint: OpenAIEndpoint = .chatCompletions,
+         disableThinking: Bool = true,
+         baseURL: String,
+         apiKey: String,
+         model: String,
+         systemPrompt: String? = nil) {
         self.id = id
         self.name = name
         self.format = format
+        self.openAIEndpoint = openAIEndpoint
+        self.disableThinking = disableThinking
         self.baseURL = baseURL
         self.apiKey = apiKey
         self.model = model
@@ -27,25 +70,42 @@ struct AIConfig: Codable, Identifiable, Equatable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, name, format, baseURL, apiKey, model, systemPrompt
+        case id, name, format, openAIEndpoint, disableThinking, baseURL, apiKey, model, systemPrompt
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
         self.name = try container.decodeIfPresent(String.self, forKey: .name) ?? "默认配置"
-        self.format = try container.decodeIfPresent(AIFormat.self, forKey: .format) ?? .oneAPI
-        self.baseURL = try container.decode(String.self, forKey: .baseURL)
-        self.apiKey = try container.decode(String.self, forKey: .apiKey)
-        self.model = try container.decode(String.self, forKey: .model)
+        self.format = try container.decodeIfPresent(AIFormat.self, forKey: .format) ?? .openAI
+        self.openAIEndpoint = try container.decodeIfPresent(OpenAIEndpoint.self, forKey: .openAIEndpoint) ?? .chatCompletions
+        self.disableThinking = try container.decodeIfPresent(Bool.self, forKey: .disableThinking) ?? true
+        self.baseURL = try container.decodeIfPresent(String.self, forKey: .baseURL) ?? ""
+        self.apiKey = try container.decodeIfPresent(String.self, forKey: .apiKey) ?? ""
+        self.model = try container.decodeIfPresent(String.self, forKey: .model) ?? ""
         self.systemPrompt = try container.decodeIfPresent(String.self, forKey: .systemPrompt)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
+        try container.encode(format, forKey: .format)
+        try container.encode(openAIEndpoint, forKey: .openAIEndpoint)
+        try container.encode(disableThinking, forKey: .disableThinking)
+        try container.encode(baseURL, forKey: .baseURL)
+        try container.encode(apiKey, forKey: .apiKey)
+        try container.encode(model, forKey: .model)
+        try container.encodeIfPresent(systemPrompt, forKey: .systemPrompt)
     }
 
     static func createDefault() -> AIConfig {
         AIConfig(
             id: UUID(),
-            name: "OneAPI 默认",
-            format: .oneAPI,
+            name: "OpenAI 默认",
+            format: .openAI,
+            openAIEndpoint: .chatCompletions,
+            disableThinking: true,
             baseURL: "",
             apiKey: "",
             model: "",
@@ -55,6 +115,26 @@ struct AIConfig: Codable, Identifiable, Equatable {
 
     func isValid() -> Bool {
         !baseURL.isEmpty && !apiKey.isEmpty && !model.isEmpty
+    }
+
+    /// 根据格式给出默认 Base URL（用户未填写时使用）
+    var defaultBaseURL: String {
+        switch format {
+        case .anthropic:
+            return "https://api.anthropic.com"
+        case .openAI:
+            return "https://api.openai.com/v1"
+        }
+    }
+
+    /// 请求路径（不含 host）
+    var requestPath: String {
+        switch format {
+        case .anthropic:
+            return "/v1/messages"
+        case .openAI:
+            return openAIEndpoint == .responses ? "/responses" : "/chat/completions"
+        }
     }
 }
 
@@ -68,18 +148,31 @@ struct AIStorage: Codable {
     }
 }
 
-// Wrapper for OpenAI API Response
+// Wrapper for OpenAI Chat Completions Response
 struct OpenAIChatResponse: Codable {
     struct Choice: Codable {
         struct Message: Codable {
-            let content: String
+            let content: String?
         }
-        let message: Message
+        let message: Message?
+        let delta: Message?
     }
-    let choices: [Choice]
+    let choices: [Choice]?
 
     enum CodingKeys: String, CodingKey {
         case choices
+    }
+
+    var extractedText: String? {
+        for choice in choices ?? [] {
+            if let text = choice.message?.content, !text.isEmpty {
+                return text
+            }
+            if let text = choice.delta?.content, !text.isEmpty {
+                return text
+            }
+        }
+        return nil
     }
 
     init(from decoder: Decoder) throws {
@@ -90,6 +183,57 @@ struct OpenAIChatResponse: Codable {
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(choices, forKey: .choices)
+    }
+}
+
+// Wrapper for OpenAI Responses API Response
+struct OpenAIResponsesResponse: Codable {
+    struct OutputItem: Codable {
+        let type: String?
+        let role: String?
+        let content: [ContentItem]?
+    }
+
+    struct ContentItem: Codable {
+        let type: String?
+        let text: String?
+
+        enum CodingKeys: String, CodingKey {
+            case type, text
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            // Responses API 中正文条目类型为 "output_text"，兼容网关返回的 "text"
+            self.type = try container.decodeIfPresent(String.self, forKey: .type)
+            self.text = try container.decodeIfPresent(String.self, forKey: .text)
+        }
+    }
+
+    let output: [OutputItem]?
+    let text: String? // 部分网关直接返回顶层 text
+
+    enum CodingKeys: String, CodingKey {
+        case output, text
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.output = try container.decodeIfPresent([OutputItem].self, forKey: .output)
+        self.text = try container.decodeIfPresent(String.self, forKey: .text)
+    }
+
+    /// 提取首个 message 输出中的文本
+    func extractText() -> String? {
+        if let text = text, !text.isEmpty { return text }
+        guard let output = output else { return nil }
+        for item in output {
+            guard item.type == "message" || item.role == "assistant" else { continue }
+            let parts = (item.content ?? []).compactMap { $0.text }
+            let joined = parts.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !joined.isEmpty { return joined }
+        }
+        return nil
     }
 }
 
@@ -199,27 +343,6 @@ struct AIContentResponse: Codable {
     let date: String
     let startDate: String?
     let icon: String? // Added icon suggestion
-
-    static func createEmpty() -> AlmanacResponse {
-        let formatter = SharedUtils.dateFormatter(format: "yyyy-MM-dd")
-        return AlmanacResponse(
-            date: formatter.string(from: Date()),
-            lunarDate: "",
-            ganZhi: "",
-            weekday: "",
-            chongSha: "",
-            yi: "",
-            ji: "",
-            jiShen: "",
-            xiongSha: "",
-            zhiShen: "",
-            pengZu: "",
-            fortune: "",
-            luckyColor: "",
-            luckyNumber: "",
-            luckyDirection: ""
-        )
-    }
 
     func toCountdownEvent() -> CountdownEvent? {
         let formatter = SharedUtils.dateFormatter(format: "yyyy-MM-dd")

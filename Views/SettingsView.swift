@@ -6,7 +6,6 @@ struct SettingsView: View {
     @EnvironmentObject var aiService: AIService
     @EnvironmentObject var storageManager: StorageManager
     
-    @State private var apiFormat: AIFormat = .oneAPI
     @State private var baseURL: String = ""
     @State private var apiKey: String = ""
     @State private var model: String = ""
@@ -262,28 +261,6 @@ struct SettingsView: View {
             .store(in: &cancellables)
     }
     
-    func testConnection(with config: AIConfig) {
-        isTesting = true
-        testMessage = nil
-        
-        // Temporarily use the config for testing without affecting active one
-        // Note: For a clean test, we might want a dedicated test method in AIService that takes a config
-        // But for now, we'll just show success/failure message based on simple logic
-        aiService.parseCountdown(input: "测试")
-            .receive(on: DispatchQueue.main)
-            .sink(
-                receiveCompletion: { completion in
-                    isTesting = false
-                    if case .failure(let error) = completion {
-                        testMessage = "测试失败: \(error.localizedDescription)"
-                    }
-                },
-                receiveValue: { _ in
-                    testMessage = "测试成功！"
-                }
-            )
-            .store(in: &cancellables)
-    }
 
     func saveAISettings() {
         // Now handled by sheet or direct selection
@@ -347,7 +324,7 @@ struct SettingsView: View {
                 Spacer()
                 
                 Button(action: {
-                    editingConfig = AIConfig(name: "新配置", format: .oneAPI, baseURL: "", apiKey: "", model: "")
+                    editingConfig = AIConfig(name: "新配置", format: .openAI, baseURL: "", apiKey: "", model: "")
                     withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
                         showConfigSheet = true
                     }
@@ -1048,7 +1025,9 @@ struct AIConfigSheet: View {
     var onSave: (AIConfig) -> Void
     
     @State private var name: String = ""
-    @State private var format: AIFormat = .oneAPI
+    @State private var format: AIFormat = .openAI
+    @State private var openAIEndpoint: OpenAIEndpoint = .chatCompletions
+    @State private var disableThinking: Bool = true
     @State private var baseURL: String = ""
     @State private var apiKey: String = ""
     @State private var model: String = ""
@@ -1096,6 +1075,8 @@ struct AIConfigSheet: View {
                         id: config?.id ?? UUID(),
                         name: name.isEmpty ? "未命名配置" : name,
                         format: format,
+                        openAIEndpoint: openAIEndpoint,
+                        disableThinking: disableThinking,
                         baseURL: baseURL,
                         apiKey: apiKey,
                         model: model,
@@ -1136,11 +1117,17 @@ struct AIConfigSheet: View {
                         }
                         
                         FormGroup(label: "接口格式") {
-                            NearPremiumPicker(items: AIFormat.allCases, selection: $format)
+                            NearSegmentedPicker(items: AIFormat.allCases, selection: $format)
                         }
                         
-                        FormGroup(label: "API 地址") {
-                            TextField(format == .zhipu ? "https://open.bigmodel.cn/api/anthropic" : format == .anthropic ? "https://api.anthropic.com" : "https://api.example.com/v1", text: $baseURL)
+                        if format == .openAI {
+                            FormGroup(label: "API 类型") {
+                                NearSegmentedPicker(items: OpenAIEndpoint.allCases, selection: $openAIEndpoint)
+                            }
+                        }
+                        
+                        FormGroup(label: "API 地址 (留空使用默认)") {
+                            TextField(format == .anthropic ? "https://api.anthropic.com" : "https://api.openai.com/v1", text: $baseURL)
                                 .textFieldStyle(PlainTextFieldStyle())
                                 .padding(12)
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -1190,6 +1177,19 @@ struct AIConfigSheet: View {
                                 .contentShape(Rectangle())
                                 .onTapGesture { focusedField = .systemPrompt }
                         }
+                        
+                        Toggle(isOn: $disableThinking) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("禁用思考 (默认开启)")
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundColor(.nearTextPrimary)
+                                Text(format == .anthropic ? "Anthropic 请求携带 thinking=disabled" : openAIEndpoint == .responses ? "Responses API 请求携带 reasoning.effort=none" : "Chat Completions 不额外开启思考")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.nearTextSecondary)
+                            }
+                        }
+                        .toggleStyle(SwitchToggleStyle(tint: .nearPrimary))
+                        .padding(.vertical, 4)
                     }
                     .padding(24)
                     .background(Color.white.opacity(0.4))
@@ -1236,6 +1236,8 @@ struct AIConfigSheet: View {
             if let config = config {
                 self.name = config.name
                 self.format = config.format
+                self.openAIEndpoint = config.openAIEndpoint
+                self.disableThinking = config.disableThinking
                 self.baseURL = config.baseURL
                 self.apiKey = config.apiKey
                 self.model = config.model
@@ -1243,12 +1245,8 @@ struct AIConfigSheet: View {
             }
         }
         .onChange(of: format) { newFormat in
-            switch newFormat {
-            case .zhipu:
-                if baseURL.isEmpty { baseURL = "https://open.bigmodel.cn/api/anthropic" }
-                if model.isEmpty { model = "glm-5.1" }
-            default:
-                break
+            if baseURL.isEmpty {
+                baseURL = newFormat == .anthropic ? "https://api.anthropic.com" : "https://api.openai.com/v1"
             }
         }
     }
@@ -1257,57 +1255,29 @@ struct AIConfigSheet: View {
         isTesting = true
         testMessage = nil
 
-        let base: String
-        let endpoint: String
-
-        switch format {
-        case .anthropic:
-            base = baseURL.isEmpty ? "https://api.anthropic.com" : baseURL
-            endpoint = "/v1/messages"
-        case .zhipu:
-            base = baseURL.isEmpty ? "https://open.bigmodel.cn/api/anthropic" : baseURL
-            endpoint = "/v1/messages"
-        case .oneAPI:
-            base = baseURL
-            endpoint = "/chat/completions"
+        var config = AIConfig(
+            name: "测试",
+            format: format,
+            openAIEndpoint: openAIEndpoint,
+            disableThinking: disableThinking,
+            baseURL: baseURL,
+            apiKey: apiKey,
+            model: model
+        )
+        if let current = self.config {
+            config.id = current.id
         }
 
-        guard let url = URL(string: "\(base)\(endpoint)") else {
-            isTesting = false
-            testMessage = "URL 无效"
-            return
-        }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-
-        var body: [String: Any] = [
-            "model": model,
-            "messages": [["role": "user", "content": "hi"]]
-        ]
-
-        if format == .anthropic {
-            body["max_tokens"] = 10
-        } else {
-            body["max_tokens"] = 5
-        }
-
-        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
-
-        URLSession.shared.dataTask(with: request) { data, response, error in
-            DispatchQueue.main.async {
-                isTesting = false
-                if let error = error {
-                    testMessage = "测试失败: \(error.localizedDescription)"
-                } else if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
-                    testMessage = "测试成功！"
-                } else {
-                    let code = (response as? HTTPURLResponse)?.statusCode ?? 0
-                    testMessage = "测试失败 (错误码: \(code))"
+        aiService.testConnection(for: config)
+            .receive(on: DispatchQueue.main)
+            .sink(
+                receiveCompletion: { _ in
+                    isTesting = false
+                },
+                receiveValue: { success in
+                    testMessage = success ? "测试成功！" : "测试失败"
                 }
-            }
-        }.resume()
+            )
+            .store(in: &cancellables)
     }
 }
