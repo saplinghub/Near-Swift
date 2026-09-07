@@ -95,39 +95,6 @@ struct PetAnimationResolver {
     }
 }
 
-/// 消息类型映射
-enum PetMessageType: String, Codable {
-    case system, health, power, fun, weather
-    
-    var displayName: String {
-        switch self {
-        case .system: return "系统状态"
-        case .health: return "健康提醒"
-        case .power: return "能源状态"
-        case .fun: return "日常互动"
-        case .weather: return "天气提醒"
-        }
-    }
-    
-    var iconName: String {
-        switch self {
-        case .system: return "cpu"
-        case .health: return "heart.fill"
-        case .power: return "bolt.fill"
-        case .fun: return "face.smiling"
-        case .weather: return "cloud.sun.fill"
-        }
-    }
-}
-
-/// 气泡动作指令
-struct PetAction: Identifiable {
-    let id: String
-    let title: String
-    let color: Color
-    var action: (() -> Void)?
-}
-
 /// 宠物配置
 struct PetConfig {
     static let defaultSize: CGFloat = 120
@@ -174,6 +141,15 @@ class PetModel: ObservableObject {
     
     /// 当前动画状态，由 PetAnimationResolver 统一解析。
     @Published var animationState: PetAnimationState = .idle
+
+    // MARK: - Director 驱动的新增字段（中文语义 + 雪碧图帧 + 皮肤）
+    /// 中文语义状态（闲置/说话/忙碌/成功/失败…），由 PetDirector 维护。
+    @Published var semantic: PetAnimSemantic = .idle
+    /// 当前皮肤 id（guaishou / dancer-woman / 社区包名）
+    @Published var petSkinID: String = "guaishou"
+    /// 雪碧图渲染位置（行/列），由 PetDirector 帧调度推进；Lottie 皮肤忽略。
+    @Published var atlasRow: Int = 0
+    @Published var atlasCol: Int = 0
 
     /// 当前宠物朝向，用于行走时根据目标方向翻转。
     @Published var facingDirection: PetFacingDirection = .right

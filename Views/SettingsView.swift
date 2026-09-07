@@ -31,6 +31,8 @@ struct SettingsView: View {
     @State private var configToDelete: AIConfig? = nil
     
     // Pet Settings
+    @State private var availablePets: [PetManifest] = []
+    @State private var selectedPetID: String = "guaishou"
     @State private var isPetSelfAwarenessEnabled: Bool = true
     @State private var isPetSystemAwarenessEnabled: Bool = true
     @State private var isPetIntentAwarenessEnabled: Bool = true
@@ -214,6 +216,8 @@ struct SettingsView: View {
             self.isHealthReminderEnabled = storageManager.isHealthReminderEnabled
             self.isPetEnabled = storageManager.isPetEnabled
             self.isWindmillEnabled = storageManager.isWindmillEnabled
+            self.selectedPetID = PetManager.shared.model.petSkinID
+            self.availablePets = PetLibrary.listAvailablePets()
             self.checkAccessibilityStatus()
         }
     }
@@ -221,6 +225,37 @@ struct SettingsView: View {
     private func checkAccessibilityStatus() {
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: false]
         isAccessibilityGranted = AXIsProcessTrustedWithOptions(options as CFDictionary)
+    }
+    
+    // MARK: - 宠物形象
+    private func petCell(_ pet: PetManifest) -> some View {
+        let isSelected = selectedPetID == pet.id
+        return Button(action: {
+            selectedPetID = pet.id
+            PetManager.shared.model.petSkinID = pet.id
+            PetManager.shared.setSkin(id: pet.id)
+        }) {
+            HStack(spacing: 8) {
+                Image(systemName: pet.source == "spriteAtlas" ? "square.grid.3x3.fill" : "wand.and.stars")
+                    .font(.system(size: 12))
+                Text(pet.displayName)
+                    .font(.system(size: 12, weight: .semibold))
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+                if isSelected {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 13))
+                }
+            }
+            .foregroundColor(isSelected ? .white : .nearTextPrimary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(isSelected ? Color.nearPrimary : Color(hex: "#F1F5F9"))
+            )
+        }
+        .buttonStyle(.plain)
     }
     
     @EnvironmentObject var weatherService: WeatherService
@@ -611,6 +646,33 @@ struct SettingsView: View {
                     }
                 }
                 .toggleStyle(SwitchToggleStyle(tint: .nearPrimary))
+                .padding(.vertical, 16)
+                
+                Divider()
+                
+                // 宠物形象选择
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("宠物形象")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(.nearPrimary)
+                    
+                    if availablePets.isEmpty {
+                        Text("未找到可用皮肤（内置怪兽不可用？）")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                    } else {
+                        // 两列网格
+                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                            ForEach(availablePets, id: \.id) { pet in
+                                petCell(pet)
+                            }
+                        }
+                    }
+                    
+                    Text("社区皮肤自动扫描 ~/.codex/pets 与「应用程序支持/Near-Swift/Pets」。")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                }
                 .padding(.vertical, 16)
                 
                 Divider()

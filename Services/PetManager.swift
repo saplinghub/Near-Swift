@@ -7,6 +7,9 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
     static let shared = PetManager()
     
     @Published var model = PetModel()
+    private(set) var petBundle: PetBundle = .builtin(.builtinGuaishou)
+    /// 雪碧图皮肤时的帧驱动器
+    private var director: PetDirector?
     private var petWindow: PetWindow?
     private var bubbleWindow: BubbleWindow?
     private var checkTimer: Timer?
@@ -184,6 +187,7 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
     private func enterIdleMode() {
         LogManager.shared.append("[PET] Entering Idle Mode: Suspending timers and animations")
         invalidateAllTimers()
+        director?.suspend()
         monitor?.stopMonitoring()
         withAnimation { model.isMessageVisible = false }
         model.isDragging = false
@@ -204,6 +208,7 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
     private func handleIdleExit() {
         LogManager.shared.append("[PET] Detected Idle Exit: Restoring activities")
         monitor?.startMonitoring()
+        director?.resume()
         startMonitoring()
         refreshAnimationState(reason: "idleExit")
 
@@ -226,7 +231,13 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
         let screenFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1024, height: 768)
         let initialRect = NSRect(x: screenFrame.midX - 30, y: screenFrame.midY - 30, width: 60, height: 60)
         
-        let petWindow = PetWindow(contentRect: initialRect, model: model)
+        // 依据当前皮肤 id 解析形象（内置 guaishou / 社区雪碧图）
+        self.petBundle = PetLibrary.resolveBundle(petID: model.petSkinID)
+        model.semantic = .idle
+        model.atlasRow = 0
+        model.atlasCol = 0
+
+        let petWindow = PetWindow(contentRect: initialRect, model: model, bundle: petBundle)
         petWindow.delegate = self
         
         // 创建并绑定气泡窗口
@@ -240,10 +251,41 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
         self.monitor = SystemMonitor() // 初始化监控
         self.intentMonitor = UserIntentMonitor.shared
         
+        // 雪碧图皮肤：由 director 驱动帧（Lottie 皮肤自带动画，无需）
+        if petBundle.isLottie == false {
+            let director = PetDirector(model: model)
+            self.director = director
+            director.attachAtlas()
+            director.interrupt(.idle, reason: "showPet")
+        } else {
+            self.director = nil
+        }
+        
         // 启动时同步持久化设置
         // 静态模式优化：仅在非闲置时启动高频监控（逻辑已在 startMonitoring 中处理）
         
         startMonitoring()
+    }
+
+    /// 切换宠物皮肤（外部/设置页调用）。返回是否成功。
+    @discardableResult
+    func setSkin(id: String) -> Bool {
+        UserDefaults.standard.set(id, forKey: "petSkinID")
+        guard petWindow == nil else {
+            // 运行中切换：先隐藏再以新皮肤重建
+            hidePet()
+            model.petSkinID = id
+            if model.isEnabled { showPet() }
+            return true
+        }
+        model.petSkinID = id
+        return true
+    }
+
+    /// 启动时恢复上次皮肤
+    func loadStoredSkin() {
+        let stored = UserDefaults.standard.string(forKey: "petSkinID") ?? "guaishou"
+        model.petSkinID = stored
     }
     
 
@@ -257,6 +299,7 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
         // 拖拽中激活动画
         self.isDragging = true
         model.isDragging = true
+        director?.interrupt(.dragging, reason: "draggingStarted")
         refreshAnimationState(reason: "draggingStarted")
 
         // 由于使用了 addChildWindow，位移同步由系统处理
@@ -266,6 +309,7 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
     func finishDragging() {
         self.isDragging = false
         model.isDragging = false
+        director?.reconcile(reason: "draggingFinished")
         refreshAnimationState(reason: "draggingFinished")
 
         handleDocking(isDragging: false)
@@ -628,6 +672,7 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
                     else if self.model.state == .docked { self.model.state = .idle }
                 }
                 self.refreshAnimationState(reason: "dockingChanged")
+                self.director?.reconcile(reason: "dockingChanged")
 
                 if wasAlreadyDocked && !shouldDock {
                     self.saySomething(text: self.undockQuotes.randomElement() ?? "呼~ 被抓出来了")
@@ -701,6 +746,7 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
         model.facingDirection = dx < 0 ? .left : .right
         model.state = .walking
         model.walkTarget = target
+        director?.interrupt(.walking, reason: "walkStarted")
         refreshAnimationState(reason: "walkStarted")
 
         // 彻底废弃 Timer 步进，改用 Core Animation (NSAnimationContext) 驱动
@@ -730,6 +776,7 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
         model.state = .idle
         model.lastWalkTime = Date()
         model.walkTarget = nil
+        director?.returnToAmbient(reason: "walkStopped")
         refreshAnimationState(reason: "walkStopped")
     }
     
@@ -803,6 +850,7 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
         model.messageId = UUID()
         
         withAnimation { model.isMessageVisible = true }
+        director?.interrupt(.speaking, reason: "say", ttl: 3.0)
         
         // 注意：如果是通过 NotificationManager 来的，自动消失由其管理，这里不启动自身的 timer
         if !isFromManager {
@@ -818,6 +866,8 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
     
     func hidePet() {
         invalidateAllTimers()
+        director?.suspend()
+        director = nil
         monitor?.stopMonitoring()
         bubbleWindow?.orderOut(nil)
         petWindow?.orderOut(nil)

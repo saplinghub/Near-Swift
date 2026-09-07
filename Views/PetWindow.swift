@@ -3,9 +3,11 @@ import SwiftUI
 
 class PetWindow: NSPanel {
     private var model: PetModel
+    private var bundle: PetBundle?
     
-    init(contentRect: NSRect, model: PetModel) {
+    init(contentRect: NSRect, model: PetModel, bundle: PetBundle? = nil) {
         self.model = model
+        self.bundle = bundle
         
         // 强制窗口大小为 60x60
         let fixedRect = NSRect(x: contentRect.origin.x, y: contentRect.origin.y, width: 60, height: 60)
@@ -26,7 +28,7 @@ class PetWindow: NSPanel {
         // 现在整个窗口都是宠物，可以直接允许背景拖拽
         self.isMovableByWindowBackground = true
         
-        let petView = PetContentView(model: model)
+        let petView = PetContentView(model: model, bundle: bundle)
         let hostingView = NSHostingView(rootView: petView)
         hostingView.layer?.backgroundColor = NSColor.clear.cgColor
         self.contentView = hostingView

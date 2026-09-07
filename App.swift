@@ -36,6 +36,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // 启动桌宠
         Logger.shared.log("Enabling/Disabling pet based on settings...")
+        PetManager.shared.loadStoredSkin()
         PetManager.shared.model.isEnabled = storageManager.isPetEnabled
         if storageManager.isPetEnabled {
             Logger.shared.log("Showing Pet...")

@@ -24,7 +24,7 @@ let package = Package(
                 .product(name: "Lottie", package: "lottie-spm")
             ],
             path: ".",
-            exclude: ["build-dmg.sh", "dist", "README.md", "Info.plist", "Resources/doc"],
+            exclude: ["build-dmg.sh", "build-dmg-new.sh", "dist", "README.md", "docs", "Info.plist", "LICENSE", "Resources/doc", "Resources/AppIcon.icns"],
             sources: [
                 "App.swift",
                 "Models",
@@ -34,7 +34,8 @@ let package = Package(
             ],
             resources: [
                 .process("Resources/icons"),
-                .process("Resources/lottie")
+                .process("Resources/lottie"),
+                .process("Resources/Pets")
             ]
         )
     ]
