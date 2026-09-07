@@ -40,9 +40,6 @@ class StatusBarManager: NSObject, NSWindowDelegate, NSMenuDelegate {
         
         // Initial Sync
         updatePinnedTitle()
-        
-        // Initial Sync
-        updatePinnedTitle()
     }
     
     private func setupStatusItem() {

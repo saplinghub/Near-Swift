@@ -13,6 +13,7 @@ class UserIntentMonitor: ObservableObject {
     private var runLoopSource: CFRunLoopSource?
     private var timer: Timer?
     private var counter: Int = 0
+    private let counterLock = NSLock()
     private var cancellables = Set<AnyCancellable>()
     
     // 操作记录日志
@@ -51,10 +52,12 @@ class UserIntentMonitor: ObservableObject {
         let eventMask = (1 << NX_KEYDOWN) | (1 << NX_LMOUSEDOWN) | (1 << NX_RMOUSEDOWN)
         
         let callback: CGEventTapCallBack = { (proxy, type, event, refcon) in
+            // 统计键盘/鼠标输入频率，供 PetManager 意图感知使用
             if let ptr = refcon {
-                // 暂时不去记录 inputFrequency 的值
-                // let mySelf = Unmanaged<UserIntentMonitor>.fromOpaque(ptr).takeUnretainedValue()
-                // mySelf.counter += 1
+                let mySelf = Unmanaged<UserIntentMonitor>.fromOpaque(ptr).takeUnretainedValue()
+                mySelf.counterLock.lock()
+                mySelf.counter += 1
+                mySelf.counterLock.unlock()
             }
             return Unmanaged.passRetained(event)
         }
@@ -81,12 +84,15 @@ class UserIntentMonitor: ObservableObject {
     
     /// 由 PetManager 在意图检查周期调用，用于结算频率并重置
     func flushInputFrequency() -> Int {
+        counterLock.lock()
         let current = counter
+        counter = 0
+        counterLock.unlock()
+
         self.inputFrequency = current
         if current > 0 {
             self.recordLog(event: "Input Frequency Settle: \(current) in period")
         }
-        self.counter = 0
         return current
     }
     

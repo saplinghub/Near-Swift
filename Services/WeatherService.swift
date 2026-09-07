@@ -160,7 +160,12 @@ class WeatherService: ObservableObject {
         // Minutely requires "lon,lat"
         let lon = storage.string(forKey: "qWeatherLon")
         let lat = storage.string(forKey: "qWeatherLat")
-        let minutelyLoc = (lon != nil && lat != nil) ? "\(lon!),\(lat!)" : locId
+        let minutelyLoc: String
+        if let lon = lon, let lat = lat {
+            minutelyLoc = "\(lon),\(lat)"
+        } else {
+            minutelyLoc = locId
+        }
         
         let minutelyPublisher = fetchMinutely(location: minutelyLoc, key: key, host: baseUrl)
             .map { Optional($0) }
