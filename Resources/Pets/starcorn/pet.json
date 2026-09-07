@@ -1,0 +1,7 @@
+{
+  "id": "starcorn",
+  "displayName": "独角兽 (Starcorn)",
+  "description": "OpenPets 内置社区宠物（MIT），8x9 雪碧图",
+  "source": "spriteAtlas",
+  "spritesheetPath": "spritesheet.webp"
+}
