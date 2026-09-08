@@ -411,3 +411,60 @@ final class AmbientScheduler {
 - 拖拽投掷物理 `PetLaunchMotion`、屏幕变化唤回、位置持久化（Phase 4）未做。
 - `PetDirector` 目前只驱动雪碧图帧；Lottie 皮肤仍走旧 `PetAnimationResolver`（未统一到语义）。
 - 社区宠物一键导入入口（curl 安装）尚未在 UI 提供，靠手动放目录。
+
+### 静默闲置策略（2026-09-07 补记）
+
+社区版雪碧图皮肤此前闲置时会"一直循环呼吸动画"，观感吵且耗资源。已优化：
+
+- **闲置**：切到闲置后只播放 1 轮呼吸（约 6 帧 / 1s），然后**停帧静置**（保持末帧，不再驱动 Timer）。
+- **偶发微动**：静置期间每 6s 一个微动 Timer，快速眨眼/轻动 2 帧（约 0.12s）后回到静置帧——"活着但不吵"。
+- **一次性动作**（说话/成功/失败）播 2 轮回闲置；**忙碌/待命/评审/行走**持续循环（这些是"有事情"）。
+- **贴边/低电量**：完全静止。
+- 任何微动/循环 Timer 都受 `suspend()`（闲置抑制/隐藏）与 TTL 回闲约束，不存在常驻高频帧 Timer。
+
+> 渲染侧同步配合：`SpriteAtlasView` 改为 CALayer `contentsRect` 方案——整图只上传一次到 GPU，换帧只改可视矩形，静置时零重绘；对比旧的 Lottie 每帧 CPU 参与 + 常驻 1s/0.5s 双 Timer，闲置功耗显著更低。
+
+### 外部 Agent 接入（PI Hook 方案，2026-09-07 落地）
+
+**结论**：PI 这类 CLI Agent 不应通过 MCP "让模型主动调用"来通知宠物，而应使用其**生命周期 Hook**——宿主保证触发、不占模型上下文。PI 支持 TypeScript Hook（`~/.pi/agent/hooks/*.ts` 自动发现），事件含 `session_start / agent_start / agent_end / tool_result(isError) / session_shutdown` 等。
+
+**架构**：
+```
+PI (Hook: near-pet.ts) ──TCP 127.0.0.1:47521──▶ PetCommandServer (Swift, 回环)
+     │                                               │ JSON 一行协议
+     │  {"semantic":"success|failure|working|...","message":"可选"}
+     ▼                                               ▼
+  agent_start → working(原地跑)                  PetManager.onCommand
+  tool_result isError → failure(沮丧)              ├─ 动作 → PetDirector.interrupt(semantic)
+  agent_end (无错) → success(跳跃)                 └─ 台词 → saySomething
+```
+
+**落地文件**：
+- `Services/PetCommandServer.swift`：`NWListener` 绑定回环 47521，解析一行 JSON，回调主线程；只接受 127.0.0.1 连接。
+- `PetManager.startCommandServer()`：随 `showPet()` 启动、`hidePet()` 停止；收到命令 → 动作 + 可选台词。
+- `docs/pi-near-pet-hook.ts`：PI Hook 模板（安装到 `~/.pi/agent/hooks/near-pet.ts`），映射 agent_start→working、工具错误→failure、agent_end→success、session 生命周期→idle。
+
+**验证**：网络收发链路已用独立 harness 实测（listener ↔ client JSON 收发正常）；Hook 语法经 node --check 通过。App ↔ Hook 全链路需运行 App 后实测。
+
+**端口约定**：`47521`（回环，见 `PetCommandServer.port`）。
+
+### 远程命令体验优化（2026-09-08）
+
+修复远程（PI Hook）动作被本地行为打断、动作与台词打架的问题：
+
+1. **动作优先，台词不抢戏**：`PetManager.startCommandServer` 重构为——
+   - `working/waiting/review`：循环动作 + 可选台词（台词走气泡但保留动作）
+   - `success/failure`：播放完整一次性动作（跳跃/沮丧，TTL 3s）+ 台词并行
+   - `idle`：回待命
+   - `saySomething` 新增 `preserveAction` 参数：为 true 时只显示气泡，不再强制切 `.speaking`（挥手）——避免"成功跳跃刚起跳就被说话打断"。
+2. **随机散步不打断表达性动作**：`handleSelfAwareness` 增加 `isExpressiveSemantic` 检查——忙碌/成功/失败/说话展示期间不随机散步。
+3. **远程动作到达先停行走**：表达性命令若在随机散步中，先 `stopWalking` 再播动作，避免窗口还在移动、画面已是别的动作。
+
+效果：PI 报告"构建成功"时，宠物会完整跳一下（而非只挥挥手）；忙碌状态不会被随机散步打断。
+
+### v2 更新（2026-09-08）：纯社区宠物 + PI 一键接入 + 台词拟人化
+
+1. **移除内置 Lottie 宠物（怪兽/舞娘）**：删除 `LottieView`、`Resources/lottie`、Lottie 依赖；桌宠统一为 codex 8×9 雪碧图社区宠物，内置示例为 `Resources/Pets/starcorn`（独角兽）。默认皮肤 `starcorn`。
+2. **台词拟人化**：远程命令不再硬编码生硬文案（"任务完成!"），PetManager 按语义生成古风台词（成功→"成了成了！奴才给您贺喜~🎉" 等）；PI 扩展只发语义、不发文案，文案由 App 侧统一生成。
+3. **设置页 PI 一键接入**：`Services/PIIntegration.swift` 管理 PI 扩展安装/卸载/状态；桌宠设置新增「PI 通知接入」卡片——检测 `~/.pi/agent/extensions/near-pet.ts` 是否已装、一键安装/卸载、状态提示。扩展监听 PI 生命周期（agent_start/agent_end/tool_execution_end）并把语义推给 App。
+4. 旧 Lottie 动画状态机类型（`PetAnimationState/Descriptor/Resolver/Playback`）删除，`refreshAnimationState` 收敛为 `director.reconcile` 转发。
