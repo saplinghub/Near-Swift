@@ -7,7 +7,7 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
     static let shared = PetManager()
     
     @Published var model = PetModel()
-    private(set) var petBundle: PetBundle = .builtin(.builtinGuaishou)
+    private(set) var petBundle: PetBundle? = nil
     /// 雪碧图皮肤时的帧驱动器
     private var director: PetDirector?
     private var petWindow: PetWindow?
@@ -62,24 +62,10 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
     private var powerCancellables = Set<AnyCancellable>()
     private var notificationCancellable: AnyCancellable?
 
+    /// 旧 Lottie 时代的动画状态刷新入口。纯雪碧图时代统一由 PetDirector 驱动，
+    /// 这里保留为对 director 的 reconcile 转发，供既有事件调用点使用。
     private func refreshAnimationState(reason: String) {
-        let descriptor = PetAnimationResolver.resolve(model: model)
-        let oldState = model.animationState
-        let oldAnimating = model.isAnimating
-        let shouldAnimate = descriptor.playback == .playing
-
-        if oldState != descriptor.state {
-            model.animationState = descriptor.state
-            LogManager.shared.appendPerformance(
-                key: "pet-animation-state",
-                interval: 5.0,
-                "[PET-PERF] Animation \(oldState.rawValue) -> \(descriptor.state.rawValue), playback=\(descriptor.playback), reason=\(reason)"
-            )
-        }
-
-        if oldAnimating != shouldAnimate {
-            model.isAnimating = shouldAnimate
-        }
+        director?.reconcile(reason: reason)
     }
 
     override private init() {
@@ -231,7 +217,7 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
         let screenFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1024, height: 768)
         let initialRect = NSRect(x: screenFrame.midX - 30, y: screenFrame.midY - 30, width: 60, height: 60)
         
-        // 依据当前皮肤 id 解析形象（内置 guaishou / 社区雪碧图）
+        // 依据当前皮肤 id 解析形象（社区雪碧图）
         self.petBundle = PetLibrary.resolveBundle(petID: model.petSkinID)
         model.semantic = .idle
         model.atlasRow = 0
@@ -251,20 +237,100 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
         self.monitor = SystemMonitor() // 初始化监控
         self.intentMonitor = UserIntentMonitor.shared
         
-        // 雪碧图皮肤：由 director 驱动帧（Lottie 皮肤自带动画，无需）
-        if petBundle.isLottie == false {
-            let director = PetDirector(model: model)
-            self.director = director
-            director.attachAtlas()
-            director.interrupt(.idle, reason: "showPet")
-        } else {
-            self.director = nil
-        }
+        // 雪碧图皮肤：由 director 驱动帧
+        let director = PetDirector(model: model)
+        self.director = director
+        director.attachAtlas()
+        director.interrupt(.idle, reason: "showPet")
+        
+        // 启动本地命令通道（供 PI Hook / 脚本调用）
+        startCommandServer()
         
         // 启动时同步持久化设置
         // 静态模式优化：仅在非闲置时启动高频监控（逻辑已在 startMonitoring 中处理）
         
         startMonitoring()
+    }
+
+    /// 启动宠物命令通道：接收外部 JSON 命令（如 PI Hook 报告成功/失败）。
+    private func startCommandServer() {
+        PetCommandServer.shared.onCommand = { [weak self] command in
+            guard let self = self else { return }
+            guard self.petWindow != nil else { return } // 宠物未显示则忽略
+
+            // 1) 表达性动作到达时，若正在随机散步先停下，避免画面/动作打架
+            if command.semantic != .idle && self.model.state == .walking {
+                self.stopWalking()
+            }
+
+            // 2) 先播动作（给足展示时长）；3) 台词仅作为气泡文字，不打断动作
+            switch command.semantic {
+            case .idle:
+                self.director?.returnToAmbient(reason: "remote")
+                if let msg = command.message, !msg.isEmpty {
+                    self.saySomething(text: msg, type: self.petMessageType(for: .idle), preserveAction: true)
+                }
+            case .working, .waiting, .review:
+                // 持续性状态：动作循环展示，直到下一条命令/事件改变
+                self.director?.interrupt(command.semantic, reason: "remote")
+                let msg = command.message?.nilIfEmpty ?? self.petLine(for: command.semantic)
+                if let msg = msg {
+                    self.saySomething(text: msg, type: self.petMessageType(for: command.semantic), preserveAction: true)
+                }
+            case .success, .failure:
+                // 一次性表达动作：播放完整一遍（约 2.5s），台词并行显示
+                self.director?.interrupt(command.semantic, reason: "remote", ttl: 3.0)
+                let msg = command.message?.nilIfEmpty ?? self.petLine(for: command.semantic)
+                if let msg = msg {
+                    self.saySomething(text: msg, type: self.petMessageType(for: command.semantic), preserveAction: true)
+                }
+            case .speaking:
+                self.director?.interrupt(.speaking, reason: "remote", ttl: 3.0)
+                if let msg = command.message, !msg.isEmpty {
+                    self.saySomething(text: msg, type: .fun, preserveAction: true)
+                }
+            default:
+                // 闲置/贴边/低电量/行走/拖拽等：仅当有台词时说话
+                if let msg = command.message, !msg.isEmpty {
+                    self.saySomething(text: msg, type: self.petMessageType(for: command.semantic))
+                } else {
+                    self.director?.returnToAmbient(reason: "remote")
+                }
+            }
+        }
+        PetCommandServer.shared.start()
+    }
+
+    /// 远程命令未带文案时，按语义生成拟人化台词
+    private func petLine(for semantic: PetAnimSemantic) -> String? {
+        switch semantic {
+        case .working:
+            return ["奴才这就开工，陛下稍候~", "收到！奴才麻溜儿地干起来", "开工开工，键盘要冒烟啦"].randomElement()
+        case .success:
+            return ["成了成了！奴才给您贺喜~🎉", "完美收工！奴才都替陛下高兴", "搞定！陛下的吩咐奴才从不含糊"].randomElement()
+        case .failure:
+            return ["哎哟喂，出岔子了…奴才再琢磨琢磨", "大意了……陛下容奴才重新来过", "这次没成，奴才不认输！"].randomElement()
+        case .waiting:
+            return ["奴才候着呢，陛下慢慢来~"].randomElement()
+        case .review:
+            return ["让奴才端详端详……嗯，有几分门道"].randomElement()
+        case .speaking:
+            return ["奴才在呢，陛下请讲~"].randomElement()
+        case .idle:
+            return ["奴才随时听候差遣"].randomElement()
+        default:
+            return nil
+        }
+    }
+
+    /// 语义 → 气泡文案风格（供远程命令附带台词时使用）
+    private func petMessageType(for semantic: PetAnimSemantic) -> PetMessageType {
+        switch semantic {
+        case .success: return .fun
+        case .failure: return .system
+        case .working, .waiting, .review: return .system
+        case .speaking, .idle, .docked, .lowPower, .walking, .dragging: return .fun
+        }
     }
 
     /// 切换宠物皮肤（外部/设置页调用）。返回是否成功。
@@ -284,7 +350,7 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
 
     /// 启动时恢复上次皮肤
     func loadStoredSkin() {
-        let stored = UserDefaults.standard.string(forKey: "petSkinID") ?? "guaishou"
+        let stored = UserDefaults.standard.string(forKey: "petSkinID") ?? "starcorn"
         model.petSkinID = stored
     }
     
@@ -373,7 +439,8 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
                 withAnimation { self.model.cpuLoadLevel = currentLevel }
             }
         }
-        
+
+
         // 2. 拟人化气泡逻辑：稳定性过滤
         let now = Date()
         
@@ -409,6 +476,20 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
             NotificationManager.shared.post(notification)
             lastNotifiedLevel = currentLevel
             model.lastSystemQuoteTime = now
+        }
+
+        // 【新增】高负载 → “忙碌/原地跑”动作（starcorn 行7 running / 忙碌）
+        // 复用上面的稳定性窗口：稳定 4s 后进入忙碌动画，负载回落回闲置。
+        // 仅在空闲/忙碌循环态切换，不打断拖拽/说话/行走/贴边等更高优先级状态。
+        let isHighStable = currentLevel == .high &&
+            now.timeIntervalSince(levelStableStartTime) >= 4.0 &&
+            !model.isDragging && !model.isMessageVisible &&
+            model.state != .walking && !model.isDocked
+        let isWorking = model.semantic == .working
+        if isHighStable && !isWorking {
+            director?.interrupt(.working, reason: "cpuHighStable")
+        } else if currentLevel != .high && isWorking {
+            director?.returnToAmbient(reason: "cpuLoadDown")
         }
     }
     
@@ -727,11 +808,21 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
     private func handleSelfAwareness() {
         guard model.isSelfAwarenessEnabled else { return } // 开关检查
         guard model.state == .idle || model.state == .walking else { return }
+        // 表达性动作（忙碌/成功/失败等）展示期间不随机散步，避免打断
+        if isExpressiveSemantic(model.semantic) { return }
         let now = Date()
         if model.state == .idle && now.timeIntervalSince(model.lastWalkTime) > 30.0 {
             if Double.random(in: 0...1) < 0.03 {
                 startRandomWalk()
             }
+        }
+    }
+
+    /// 是否属于“表达性动作”（展示期间应避免被低频 ambient 打断）
+    private func isExpressiveSemantic(_ semantic: PetAnimSemantic) -> Bool {
+        switch semantic {
+        case .working, .waiting, .review, .success, .failure, .speaking: return true
+        case .idle, .walking, .dragging, .docked, .lowPower: return false
         }
     }
     
@@ -825,7 +916,7 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
         lastNotificationTimes[typeKey] = now
     }
     
-    func saySomething(text: String, type: PetMessageType = .fun, duration: TimeInterval? = nil, isFromManager: Bool = false) {
+    func saySomething(text: String, type: PetMessageType = .fun, duration: TimeInterval? = nil, isFromManager: Bool = false, preserveAction: Bool = false) {
         // 如果不是来自 NotificationManager，且没有显式的 isFromManager，则需要清空按钮
         // 这通常是内部拟人化短句（如散步后的感慨）
         if !isFromManager {
@@ -850,7 +941,10 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
         model.messageId = UUID()
         
         withAnimation { model.isMessageVisible = true }
-        director?.interrupt(.speaking, reason: "say", ttl: 3.0)
+        // preserveAction：仅显示气泡，不把当前动作（如成功跳跃/失败沮丧）切成"说话/挥手"
+        if !preserveAction {
+            director?.interrupt(.speaking, reason: "say", ttl: 3.0)
+        }
         
         // 注意：如果是通过 NotificationManager 来的，自动消失由其管理，这里不启动自身的 timer
         if !isFromManager {
@@ -868,6 +962,8 @@ class PetManager: NSObject, ObservableObject, NSWindowDelegate {
         invalidateAllTimers()
         director?.suspend()
         director = nil
+        PetCommandServer.shared.onCommand = nil
+        PetCommandServer.shared.stop()
         monitor?.stopMonitoring()
         bubbleWindow?.orderOut(nil)
         petWindow?.orderOut(nil)

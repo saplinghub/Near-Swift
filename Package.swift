@@ -14,15 +14,10 @@ let package = Package(
             targets: ["NearCountdown"]
         )
     ],
-    dependencies: [
-        .package(url: "https://github.com/airbnb/lottie-spm.git", from: "4.4.1")
-    ],
     targets: [
         .executableTarget(
             name: "NearCountdown",
-            dependencies: [
-                .product(name: "Lottie", package: "lottie-spm")
-            ],
+            dependencies: [],
             path: ".",
             exclude: ["build-dmg.sh", "build-dmg-new.sh", "dist", "README.md", "docs", "Info.plist", "LICENSE", "Resources/doc", "Resources/AppIcon.icns"],
             sources: [
@@ -34,7 +29,6 @@ let package = Package(
             ],
             resources: [
                 .process("Resources/icons"),
-                .process("Resources/lottie"),
                 .process("Resources/Pets")
             ]
         )

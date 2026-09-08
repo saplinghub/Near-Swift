@@ -14,17 +14,6 @@ enum DockEdge {
     case none, left, right, top, bottom
 }
 
-/// 宠物动画播放状态
-/// 行为状态仍由 PetState 表达，动画状态只负责渲染层播放意图。
-enum PetAnimationState: String, Codable {
-    case lowPower
-    case idle
-    case docked
-    case speaking
-    case dragging
-    case walking
-}
-
 /// 宠物朝向，用于 walking/dragging 等场景的轻量翻转。
 enum PetFacingDirection: String, Codable {
     case left
@@ -35,63 +24,6 @@ enum PetFacingDirection: String, Codable {
         case .left: return -1
         case .right: return 1
         }
-    }
-}
-
-/// Lottie 播放控制策略。
-enum PetAnimationPlayback: Equatable {
-    case playing
-    case paused
-    case stopped
-}
-
-/// 视图层消费的动画描述，避免 PetContentView 分散判断业务状态。
-struct PetAnimationDescriptor: Equatable {
-    let state: PetAnimationState
-    let animationName: String
-    let playback: PetAnimationPlayback
-    let shouldBob: Bool
-    let facingDirection: PetFacingDirection
-    let scale: CGFloat
-    let opacity: Double
-}
-
-struct PetAnimationResolver {
-    static func resolve(model: PetModel) -> PetAnimationDescriptor {
-        let animationState: PetAnimationState
-
-        if !model.isEnabled || model.isIdle {
-            animationState = .lowPower
-        } else if model.isDragging {
-            animationState = .dragging
-        } else if model.isMessageVisible {
-            animationState = .speaking
-        } else if model.state == .walking {
-            animationState = .walking
-        } else if model.isDocked || model.state == .docked {
-            animationState = .docked
-        } else {
-            animationState = .idle
-        }
-
-        let playback: PetAnimationPlayback = {
-            switch animationState {
-            case .speaking, .dragging, .walking:
-                return .playing
-            case .lowPower, .idle, .docked:
-                return .stopped
-            }
-        }()
-
-        return PetAnimationDescriptor(
-            state: animationState,
-            animationName: "guaishou",
-            playback: playback,
-            shouldBob: animationState == .walking,
-            facingDirection: model.facingDirection,
-            scale: model.isDocked ? 0.75 : 1.0,
-            opacity: model.isDocked ? 0.9 : 1.0
-        )
     }
 }
 
@@ -139,14 +71,11 @@ class PetModel: ObservableObject {
     @Published var messageType: PetMessageType = .fun
     @Published var isMessageVisible: Bool = false
     
-    /// 当前动画状态，由 PetAnimationResolver 统一解析。
-    @Published var animationState: PetAnimationState = .idle
-
-    // MARK: - Director 驱动的新增字段（中文语义 + 雪碧图帧 + 皮肤）
+    // MARK: - Director 驱动字段（中文语义 + 雪碧图帧 + 皮肤）
     /// 中文语义状态（闲置/说话/忙碌/成功/失败…），由 PetDirector 维护。
     @Published var semantic: PetAnimSemantic = .idle
-    /// 当前皮肤 id（guaishou / dancer-woman / 社区包名）
-    @Published var petSkinID: String = "guaishou"
+    /// 当前皮肤 id（社区雪碧图宠物，默认内置独角兽）
+    @Published var petSkinID: String = "starcorn"
     /// 雪碧图渲染位置（行/列），由 PetDirector 帧调度推进；Lottie 皮肤忽略。
     @Published var atlasRow: Int = 0
     @Published var atlasCol: Int = 0
@@ -156,9 +85,6 @@ class PetModel: ObservableObject {
 
     /// 是否正在拖拽。保留在 model 中，便于视图层统一解析动画状态。
     @Published var isDragging: Bool = false
-
-    /// 是否正处于动画活跃状态（兼容旧逻辑，由 animationState 派生）。
-    @Published var isAnimating: Bool = false
 
     // 自由移动目标
     var walkTarget: CGPoint?

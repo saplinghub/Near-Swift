@@ -32,7 +32,9 @@ struct SettingsView: View {
     
     // Pet Settings
     @State private var availablePets: [PetManifest] = []
-    @State private var selectedPetID: String = "guaishou"
+    @State private var selectedPetID: String = "starcorn"
+    @State private var isPIIntegrated: Bool = PIIntegration.isInstalled
+    @State private var piFeedback: String? = nil
     @State private var isPetSelfAwarenessEnabled: Bool = true
     @State private var isPetSystemAwarenessEnabled: Bool = true
     @State private var isPetIntentAwarenessEnabled: Bool = true
@@ -218,6 +220,7 @@ struct SettingsView: View {
             self.isWindmillEnabled = storageManager.isWindmillEnabled
             self.selectedPetID = PetManager.shared.model.petSkinID
             self.availablePets = PetLibrary.listAvailablePets()
+            self.isPIIntegrated = PIIntegration.isInstalled
             self.checkAccessibilityStatus()
         }
     }
@@ -227,6 +230,25 @@ struct SettingsView: View {
         isAccessibilityGranted = AXIsProcessTrustedWithOptions(options as CFDictionary)
     }
     
+    // MARK: - PI 通知接入
+    private func installPI() {
+        if let err = PIIntegration.install() {
+            piFeedback = "安装失败：\(err)"
+        } else {
+            withAnimation { isPIIntegrated = true }
+            piFeedback = "安装成功，请重开 PI 会话（或输入 /reload）生效"
+        }
+    }
+
+    private func uninstallPI() {
+        if let err = PIIntegration.uninstall() {
+            piFeedback = "卸载失败：\(err)"
+        } else {
+            withAnimation { isPIIntegrated = false }
+            piFeedback = "已卸载"
+        }
+    }
+
     // MARK: - 宠物形象
     private func petCell(_ pet: PetManifest) -> some View {
         let isSelected = selectedPetID == pet.id
@@ -236,7 +258,7 @@ struct SettingsView: View {
             PetManager.shared.setSkin(id: pet.id)
         }) {
             HStack(spacing: 8) {
-                Image(systemName: pet.source == "spriteAtlas" ? "square.grid.3x3.fill" : "wand.and.stars")
+                Image(systemName: "square.grid.3x3.fill")
                     .font(.system(size: 12))
                 Text(pet.displayName)
                     .font(.system(size: 12, weight: .semibold))
@@ -657,7 +679,7 @@ struct SettingsView: View {
                         .foregroundColor(.nearPrimary)
                     
                     if availablePets.isEmpty {
-                        Text("未找到可用皮肤（内置怪兽不可用？）")
+                        Text("未找到可用皮肤。请安装社区宠物到 ~/.codex/pets 后重试。")
                             .font(.system(size: 12))
                             .foregroundColor(.secondary)
                     } else {
@@ -672,6 +694,77 @@ struct SettingsView: View {
                     Text("社区皮肤自动扫描 ~/.codex/pets 与「应用程序支持/Near-Swift/Pets」。")
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
+                }
+                .padding(.vertical, 16)
+                
+                Divider()
+                
+                // PI 通知接入
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "bell.badge.fill")
+                            .foregroundColor(isPIIntegrated ? .green : .nearPrimary)
+                        Text("PI 通知接入")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundColor(.nearPrimary)
+                        Spacer()
+                        Text(isPIIntegrated ? "已启用" : "未安装")
+                            .font(.system(size: 11, weight: .bold))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 3)
+                            .background((isPIIntegrated ? Color.green : Color.gray).opacity(0.15))
+                            .foregroundColor(isPIIntegrated ? .green : .gray)
+                            .cornerRadius(10)
+                    }
+                    
+                    Text(isPIIntegrated
+                         ? "PI 运行任务时，宠物会同步表演忙碌/成功/失败动作。"
+                         : "让 PI (Perplexity CLI) 干活时，宠物同步表演忙碌/成功/失败动作。")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                    
+                    if !isPIIntegrated {
+                        Button(action: installPI) {
+                            Label("一键安装 PI 扩展", systemImage: "arrow.down.circle.fill")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity).frame(height: 36)
+                                .background(LinearGradient(colors: [.nearPrimary, .nearSecondary], startPoint: .leading, endPoint: .trailing))
+                                .cornerRadius(10)
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        HStack(spacing: 10) {
+                            Button(action: {
+                                withAnimation { saveFeedbackMessage = "请重开 PI 会话生效" }
+                            }) {
+                                Label("已写入 ~/.pi/agent/extensions", systemImage: "checkmark.circle")
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundColor(.secondary)
+                                    .frame(maxWidth: .infinity).frame(height: 32)
+                                    .background(Color(hex: "#F1F5F9"))
+                                    .cornerRadius(8)
+                            }
+                            .buttonStyle(.plain)
+                            
+                            Button(action: uninstallPI) {
+                                Image(systemName: "trash")
+                                    .font(.system(size: 13))
+                                    .foregroundColor(.red.opacity(0.7))
+                                    .frame(width: 32, height: 32)
+                                    .background(Color.red.opacity(0.08))
+                                    .cornerRadius(8)
+                            }
+                            .buttonStyle(.plain)
+                            .help("卸载 PI 扩展")
+                        }
+                    }
+                    
+                    if let fb = piFeedback {
+                        Text(fb)
+                            .font(.system(size: 11))
+                            .foregroundColor(fb.contains("成功") || fb.contains("已") ? .green : .red)
+                    }
                 }
                 .padding(.vertical, 16)
                 

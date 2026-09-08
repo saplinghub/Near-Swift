@@ -2,30 +2,23 @@ import Foundation
 import CoreGraphics
 
 // MARK: - 皮肤包 manifest
-/// 支持两种形象来源：
-///  1. source = "lottie"       → Resources/lottie/<file>.json（现有内置宠物）
-///  2. source = "spriteAtlas"  → spritesheet 雪碧图（兼容 codex pet 生态）
-struct PetManifest: Codable, Equatable {
+/// 宠物形象统一为雪碧图（codex 8x9 契约社区宠物）。
+struct PetManifest: Codable, Equatable, Identifiable {
     var id: String
     var displayName: String
     var description: String?
-    var source: String?            // "lottie"（默认） | "spriteAtlas"
-    var lottieFile: String?        // source=lottie 时的 json 文件名（不含扩展名）
-    var spritesheetPath: String?   // source=spriteAtlas 时的相对文件名
+    var spritesheetPath: String?   // 相对文件名，默认 spritesheet.webp
     var atlasRows: Int?            // 默认 9（codex 标准）；社区 v2 为 11
 
     enum CodingKeys: String, CodingKey {
-        case id, displayName, description, source, lottieFile, spritesheetPath, atlasRows
+        case id, displayName, description, spritesheetPath, atlasRows
     }
 
     init(id: String, displayName: String, description: String? = nil,
-         source: String? = nil, lottieFile: String? = nil,
          spritesheetPath: String? = nil, atlasRows: Int? = nil) {
         self.id = id
         self.displayName = displayName
         self.description = description
-        self.source = source
-        self.lottieFile = lottieFile
         self.spritesheetPath = spritesheetPath
         self.atlasRows = atlasRows
     }
@@ -35,19 +28,15 @@ struct PetManifest: Codable, Equatable {
         self.id = try c.decodeIfPresent(String.self, forKey: .id) ?? UUID().uuidString
         self.displayName = try c.decodeIfPresent(String.self, forKey: .displayName) ?? self.id
         self.description = try c.decodeIfPresent(String.self, forKey: .description)
-        self.source = try c.decodeIfPresent(String.self, forKey: .source)
-        self.lottieFile = try c.decodeIfPresent(String.self, forKey: .lottieFile)
         self.spritesheetPath = try c.decodeIfPresent(String.self, forKey: .spritesheetPath)
         self.atlasRows = try c.decodeIfPresent(Int.self, forKey: .atlasRows)
     }
 
-    /// 默认内置宠物（guaishou Lottie）
-    static let builtinGuaishou = PetManifest(
-        id: "guaishou",
-        displayName: "怪兽",
-        description: "内置桌宠",
-        source: "lottie",
-        lottieFile: "guaishou"
+    /// 内置默认宠物（仓库 Resources/Pets 中的独角兽）
+    static let builtinStarcorn = PetManifest(
+        id: "starcorn",
+        displayName: "独角兽",
+        description: "内置社区宠物 (OpenPets Starcorn, MIT)"
     )
 }
 
@@ -55,29 +44,26 @@ struct PetManifest: Codable, Equatable {
 enum PetBundleError: Error, LocalizedError {
     case missingManifest(URL)
     case missingSpritesheet(URL)
-    case missingLottie(String)
     case atlasFailed(URL, Error)
 
     var errorDescription: String? {
         switch self {
         case .missingManifest(let u): return "缺少 pet.json：\(u.path)"
         case .missingSpritesheet(let u): return "缺少雪碧图：\(u.path)"
-        case .missingLottie(let f): return "缺少内置 Lottie 资源：\(f)"
         case .atlasFailed(let u, let e): return "雪碧图加载失败 \(u.lastPathComponent)：\(e.localizedDescription)"
         }
     }
 }
 
-/// 一个已解析、可直接渲染的宠物形象。
+/// 一个已解析、可直接渲染的宠物形象（雪碧图）。
 struct PetBundle {
     let manifest: PetManifest
-    let directoryURL: URL?     // 非 nil = 外部皮肤包目录（App Support / ~/.codex/pets）
-    var atlas: SpriteAtlas?    // source = spriteAtlas 时非 nil
+    let directoryURL: URL?
+    var atlas: SpriteAtlas?
 
-    var lottieName: String? { manifest.source == "lottie" ? (manifest.lottieFile ?? manifest.id) : nil }
-    var isLottie: Bool { manifest.source != "spriteAtlas" }
+    var displayName: String { manifest.displayName }
 
-    /// 从目录加载外部皮肤包
+    /// 从目录加载外部皮肤包（~/.codex/pets 或 App Support/Pets）
     static func load(from directoryURL: URL) throws -> PetBundle {
         let manifestURL = directoryURL.appendingPathComponent("pet.json")
         guard FileManager.default.fileExists(atPath: manifestURL.path) else {
@@ -85,21 +71,11 @@ struct PetBundle {
         }
         let manifest = try JSONDecoder().decode(PetManifest.self, from: Data(contentsOf: manifestURL))
 
-        guard manifest.source == "spriteAtlas" else {
-            // Lottie 型皮肤包：资源名即 manifest.id 或 lottieFile
-            let name = manifest.lottieFile ?? manifest.id
-            guard ResourceBundle.current.path(forResource: name, ofType: "json") != nil else {
-                throw PetBundleError.missingLottie(name)
-            }
-            return PetBundle(manifest: manifest, directoryURL: nil, atlas: nil)
-        }
-
         let sheetName = manifest.spritesheetPath ?? "spritesheet.webp"
         let sheetURL = directoryURL.appendingPathComponent(sheetName)
         guard FileManager.default.fileExists(atPath: sheetURL.path) else {
             throw PetBundleError.missingSpritesheet(sheetURL)
         }
-
         let rows = manifest.atlasRows ?? PetAtlasRows.standardRows
         do {
             let atlas = try SpriteAtlas.load(from: sheetURL, rows: rows)
@@ -107,11 +83,6 @@ struct PetBundle {
         } catch {
             throw PetBundleError.atlasFailed(sheetURL, error)
         }
-    }
-
-    /// 内置 Lottie 皮肤
-    static func builtin(_ manifest: PetManifest) -> PetBundle {
-        PetBundle(manifest: manifest, directoryURL: nil, atlas: nil)
     }
 }
 
@@ -145,8 +116,7 @@ struct PetLibrary {
             results.append(manifest)
         }
 
-        append(.builtinGuaishou)
-        append(PetManifest(id: "dancer-woman", displayName: "舞娘", description: "内置 Lottie", source: "lottie", lottieFile: "dancer-woman"))
+        append(.builtinStarcorn)
 
         var scanDirs: [URL] = [installedDirectory, codexPetsDirectory]
         if let bundled = bundledPetsDirectory {
@@ -156,7 +126,6 @@ struct PetLibrary {
             guard let entries = try? FileManager.default.contentsOfDirectory(
                 at: dir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]
             ) else { continue }
-
             for entry in entries where entry.hasDirectoryPath {
                 let manifestURL = entry.appendingPathComponent("pet.json")
                 guard FileManager.default.fileExists(atPath: manifestURL.path),
@@ -169,16 +138,13 @@ struct PetLibrary {
         return results
     }
 
-    /// 依据当前皮肤 ID 解析出可用形象；失败回退内置 guaishou。
+    /// 依据当前皮肤 ID 解析出可用形象；失败回退内置 starcorn。
     static func resolveBundle(petID: String?) -> PetBundle {
-        guard let petID = petID, !petID.isEmpty else {
-            return .builtin(.builtinGuaishou)
+        guard let petID = petID, !petID.isEmpty, petID != "guaishou", petID != "dancer-woman" else {
+            return resolveStarcorn()
         }
-        // 内置
-        if petID == "guaishou" { return .builtin(.builtinGuaishou) }
-        if petID == "dancer-woman" {
-            return .builtin(PetManifest(id: "dancer-woman", displayName: "舞娘", source: "lottie", lottieFile: "dancer-woman"))
-        }
+        if petID == "starcorn" { return resolveStarcorn() }
+
         // 外部目录（安装目录 → ~/.codex/pets → 内置 Pets）
         var resolveDirs: [URL] = [installedDirectory, codexPetsDirectory]
         if let bundled = bundledPetsDirectory {
@@ -190,6 +156,24 @@ struct PetLibrary {
                 return bundle
             }
         }
-        return .builtin(.builtinGuaishou)
+        return resolveStarcorn()
+    }
+
+    private static func resolveStarcorn() -> PetBundle {
+        // 优先内置资源目录，其次 App Support 里的 starcorn
+        let candidates: [URL] = {
+            var list: [URL] = [installedDirectory]
+            if let bundled = bundledPetsDirectory { list.append(bundled) }
+            list.append(codexPetsDirectory)
+            return list
+        }()
+        for dir in candidates {
+            let candidate = dir.appendingPathComponent("starcorn", isDirectory: true)
+            if let bundle = try? PetBundle.load(from: candidate) {
+                return bundle
+            }
+        }
+        // 理论不可达（内置包总是存在），仅防御
+        return PetBundle(manifest: .builtinStarcorn, directoryURL: nil, atlas: nil)
     }
 }

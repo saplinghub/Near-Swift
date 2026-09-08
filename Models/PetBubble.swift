@@ -64,3 +64,12 @@ struct PetBubble: Identifiable, Equatable {
         lhs.threadId == rhs.threadId && lhs.text == rhs.text
     }
 }
+
+// MARK: - 便捷扩展
+extension String {
+    /// 空白/空串 → nil，方便“空则用默认”链式
+    var nilIfEmpty: String? {
+        let t = trimmingCharacters(in: .whitespacesAndNewlines)
+        return t.isEmpty ? nil : t
+    }
+}
